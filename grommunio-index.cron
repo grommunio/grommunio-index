@@ -1,4 +1,0 @@
-SHELL=/bin/bash
-
-# run daily web index run somewhere between 02:00am and 03:00am local system time
-0 2 * * * root sleep $(( RANDOM \% 3600 )); /usr/share/grommunio-common/grommunio-index-run.sh
