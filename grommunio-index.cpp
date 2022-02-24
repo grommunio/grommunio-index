@@ -223,7 +223,7 @@ public:
 	 */
 	explicit IndexDB(const filesystem::path& userdir, const string& exmdbHost, const string& exmdbPort, const string& outpath) :
 	    usrpath(userdir),
-	    client(exmdbHost, exmdbPort, userdir, true)
+	    client(exmdbHost, exmdbPort, userdir, true, ExmdbClient::AUTO_RECONNECT)
 	{
 		if(!filesystem::exists(userdir))
 			throw runtime_error("Cannot access "s + userdir.c_str() + " (absent or permission problem)");
