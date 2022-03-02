@@ -242,7 +242,10 @@ public:
 				dbpath /= "index.sqlite3";
 		}
 		update = filesystem::exists(dbpath);
-		msg<STATUS>(update? "Existing index found - updating" : "Creating new index for user");
+		if (update)
+			msg<STATUS>("Updating existing index "s + dbpath.c_str());
+		else
+			msg<STATUS>("Creating new index "s + dbpath.c_str());
 		int res = sqlite3_open(dbpath.c_str(), &db);
 		if(res != SQLITE_OK)
 			throw runtime_error(string("Failed to open index database: ")+sqlite3_errmsg(db));
