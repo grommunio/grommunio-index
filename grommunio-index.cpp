@@ -191,6 +191,7 @@ public:
 	{
 		if(db)
 			sqlite3_close(db);
+		recheck = other.recheck;
 		dbpath = move(other.dbpath);
 		usrpath	= move(other.usrpath);
 		client = move(other.client);
@@ -221,9 +222,10 @@ public:
 	 * @param      exmdbPort  Port for exmdb connection
 	 * @param      outpath    Path of the output database or empty for default
 	 */
-	explicit IndexDB(const filesystem::path& userdir, const string& exmdbHost, const string& exmdbPort, const string& outpath) :
-	    usrpath(userdir),
-	    client(exmdbHost, exmdbPort, userdir, true, ExmdbClient::AUTO_RECONNECT)
+	IndexDB(const filesystem::path& userdir, const string& exmdbHost, const string& exmdbPort, const string& outpath,
+	        bool create=false, bool recheck=false) :
+	    usrpath(userdir), client(exmdbHost, exmdbPort, userdir, true, ExmdbClient::AUTO_RECONNECT),
+	    recheck(recheck)
 	{
 		if(!filesystem::exists(userdir))
 			throw runtime_error("Cannot access "s + userdir.c_str() + " (absent or permission problem)");
@@ -249,6 +251,12 @@ public:
 		int res = sqlite3_open(dbpath.c_str(), &db);
 		if(res != SQLITE_OK)
 			throw runtime_error(string("Failed to open index database: ")+sqlite3_errmsg(db));
+		if(update && create)
+		{
+			sqliteExec("DROP TABLE IF EXISTS hierarchy;"
+			           "DROP TABLE IF EXISTS messages");
+			update = false;
+		}
 		res = sqliteExec("CREATE TABLE IF NOT EXISTS hierarchy ("
 		                 " folder_id INTEGER PRIMARY KEY,"
 		                 " commit_max INTEGER NOT NULL,"
@@ -480,6 +488,7 @@ private:
 	vector<uint32_t> namedProptags; ///< Store specific named proptag IDs
 	sqlite3* db = nullptr; ///< SQLite database connection
 	bool update = false; ///< Whether index is updated
+	bool recheck = false; ///< Whether to check all folders regardless of timestamp
 
 	/**
 	 * @brief      Convenience wrapper for sqlite3_index
@@ -552,7 +561,7 @@ private:
 				int res = stmt.exec();
 				if(res == SQLITE_ROW)
 				{
-					if(uint64_t(sqlite3_column_int64(stmt, 0)) == lctm)
+					if(uint64_t(sqlite3_column_int64(stmt, 0)) == lctm && !recheck)
 					{
 						msg<TRACE>("Folder ", folderId, " is up to date");
 						continue;
@@ -769,6 +778,8 @@ static string exmdbHost; ///< Exmdb host to connect to
 static string exmdbPort; ///< Port of the exmdb connection
 static string userpath; ///< Path to the user's home directory
 static string outpath; ///< Index database path (empty for default)
+static bool recheck = false; ///< Check folders even when they were not changed since the last indexing
+static bool create = false; ///< Always create a new index instead of updating
 
 /**
  * @brief      Print help message
@@ -778,15 +789,17 @@ static string outpath; ///< Index database path (empty for default)
 [[noreturn]] static void printHelp(const char* name)
 {
 	cout << "grommunio mailbox indexing tool\n"
-	        "\nUsage: " << name << " [-e host] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
+	        "\nUsage: " << name << " [-c] [-e host] [-f] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
 	        "\nPositional arguments:\n"
 	        "\t userpath\t\tPath to the user's mailbox directory\n"
 	        "\nOptional arguments:\n"
+	        "\t-c\t--create \tCreate a new index instead of updating\n"
 	        "\t-e\t--host   \tHostname of the exmdb server\n"
 	        "\t-h\t--help   \tShow this help message and exit\n"
 	        "\t-o\t--out    \tWrite index database to specific file\n"
 	        "\t-p\t--port   \tPort of the exmdb server\n"
 	        "\t-q\t--quiet  \tReduce verbosity level\n"
+	        "\t-r\t--recheck\tCheck all messages regardless of folder timestamp\n"
 	        "\t-v\t--verbose\tIncrease verbosity level\n";
 	exit(0);
 }
@@ -828,11 +841,13 @@ static void parseArgs(const char* argv[])
 			if(*(++arg) == '-')
 			{
 				++arg;
-				if(!strcmp(arg, "help"))		printHelp(*argv);
+				if(!strcmp(arg, "create"))	create = true;
+				else if(!strcmp(arg, "help"))	printHelp(*argv);
 				else if(!strcmp(arg, "host"))	exmdbHost = nextArg(argp);
 				else if(!strcmp(arg, "out"))	outpath = nextArg(argp);
 				else if(!strcmp(arg, "port"))	exmdbPort = nextArg(argp);
 				else if(!strcmp(arg, "quiet"))	--verbosity;
+				else if(!strcmp(arg, "recheck"))	recheck = true;
 				else if(!strcmp(arg, "verbose"))++verbosity;
 				else if(!*arg) noopt = true;
 				else
@@ -846,11 +861,13 @@ static void parseArgs(const char* argv[])
 				{
 					switch(*sopt)
 					{
-					case 'h': printHelp(*argv); //printHelp never returns
+					case 'c': create = true; break;
 					case 'e': exmdbHost = nextArg(argp); break;
+					case 'h': printHelp(*argv); //printHelp never return
 					case 'o': outpath = nextArg(argp); break;
 					case 'p': exmdbPort = nextArg(argp); break;
 					case 'q': --verbosity; break;
+					case 'r': recheck = true; break;
 					case 'v': ++verbosity; break;
 					default:
 						msg<FATAL>("Unknown short option '", *sopt, "'");
@@ -885,7 +902,7 @@ int main(int, const char* argv[])
 	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", user=", userpath, ", output=", outpath.empty()? "<default>" : outpath);
 	IndexDB cache;
 	try {
-		cache = IndexDB(userpath, exmdbHost, exmdbPort, outpath);
+		cache = IndexDB(userpath, exmdbHost, exmdbPort, outpath, create, recheck);
 		cache.refresh();
 	} catch(const runtime_error& err) {
 		msg<FATAL>(err.what());
