@@ -216,7 +216,7 @@ public:
 	 * If no outpath is specified, the default location is
 	 * `exmdb/index.sqlite3` within the userdir.
 	 *
-	 * @param      userdir    Path to the users home-directory
+	 * @param      userdir    Path to the user's home-directory
 	 * @param      exmdbHost  Host name for exmdb connection
 	 * @param      exmdbPort  Port for exmdb connection
 	 * @param      outpath    Path of the output database or empty for default
@@ -232,7 +232,7 @@ public:
 			dbpath = userdir;
 			dbpath /= "exmdb";
 			if(!filesystem::exists(dbpath))
-				throw runtime_error("Could not find users exmdb directory.");
+				throw runtime_error("Could not find the user's exmdb directory.");
 			dbpath /= "index.sqlite3";
 		}
 		else
@@ -474,7 +474,7 @@ private:
 	    PropTag::PRIMARYTELEPHONENUMBER, PropTag::RADIOTELEPHONENUMBER, PropTag::TELEXNUMBER,
 	}; ///< Part 2 of message tags to query
 
-	filesystem::path usrpath; ///< Path to the users home directory
+	filesystem::path usrpath; ///< Path to the user's home directory
 	filesystem::path dbpath; ///< Path to the index database
 	ExmdbClient client; ///< Exmdb client to use
 	vector<uint32_t> namedProptags; ///< Store specific named proptag IDs
@@ -767,7 +767,7 @@ array<structures::PropertyName, 12> IndexDB::namedTags = {
 
 static string exmdbHost; ///< Exmdb host to connect to
 static string exmdbPort; ///< Port of the exmdb connection
-static string userpath; ///< Path to the users home directory
+static string userpath; ///< Path to the user's home directory
 static string outpath; ///< Index database path (empty for default)
 
 /**
@@ -780,7 +780,7 @@ static string outpath; ///< Index database path (empty for default)
 	cout << "grommunio mailbox indexing tool\n"
 	        "\nUsage: " << name << " [-e host] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
 	        "\nPositional arguments:\n"
-	        "\t userpath\t\tPath to the users home directory\n"
+	        "\t userpath\t\tPath to the user's home directory\n"
 	        "\nOptional arguments:\n"
 	        "\t-e\t--host   \tHostname of the exmdb server\n"
 	        "\t-h\t--help   \tShow this help message and exit\n"
