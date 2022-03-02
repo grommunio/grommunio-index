@@ -226,13 +226,13 @@ public:
 	    client(exmdbHost, exmdbPort, userdir, true)
 	{
 		if(!filesystem::exists(userdir))
-			throw runtime_error("Could not find user directory.");
+			throw runtime_error("Cannot access "s + userdir.c_str() + " (absent or permission problem)");
 		if(outpath.empty())
 		{
 			dbpath = userdir;
 			dbpath /= "exmdb";
 			if(!filesystem::exists(dbpath))
-				throw runtime_error("Could not find the user's exmdb directory.");
+				throw runtime_error("Cannot access "s + dbpath.c_str() + " (absent or permission problem)");
 			dbpath /= "index.sqlite3";
 		}
 		else
@@ -780,7 +780,7 @@ static string outpath; ///< Index database path (empty for default)
 	cout << "grommunio mailbox indexing tool\n"
 	        "\nUsage: " << name << " [-e host] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
 	        "\nPositional arguments:\n"
-	        "\t userpath\t\tPath to the user's home directory\n"
+	        "\t userpath\t\tPath to the user's mailbox directory\n"
 	        "\nOptional arguments:\n"
 	        "\t-e\t--host   \tHostname of the exmdb server\n"
 	        "\t-h\t--help   \tShow this help message and exit\n"
@@ -868,7 +868,8 @@ static void parseArgs(const char* argv[])
 	}
 	if(userpath.empty())
 	{
-		msg<FATAL>("No user path given");
+		msg<FATAL>("Usage: grommunio-index MAILDIR");
+		msg<STATUS>("Option overview: grommunio-index -h");
 		exit(RESULT_ARGERR_SYN);
 	}
 	if(exmdbHost.empty())
