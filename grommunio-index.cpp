@@ -463,11 +463,11 @@ private:
 //	    PropvalType::STRING_ARRAY
 	}; ///< Types of the named tags
 
-	static constexpr array<uint32_t, 13> msgtags1 = {
+	static constexpr array<uint32_t, 12> msgtags1 = {
 	     PropTag::ENTRYID, PropTag::SENTREPRESENTINGNAME, PropTag::SENTREPRESENTINGSMTPADDRESS,
 	     PropTag::SUBJECT, PropTag::BODY, PropTag::SENDERNAME,
 	     PropTag::SENDERSMTPADDRESS, PropTag::INTERNETCODEPAGE,
-	     PropTag::CHANGENUMBER, PropTag::FOLDERID, PropTag::MESSAGECLASS,
+	     PropTag::CHANGENUMBER, PropTag::MESSAGECLASS,
 	     PropTag::MESSAGEDELIVERYTIME, PropTag::LASTMODIFICATIONTIME
 	}; ///< Part 1 of message tags to query
 
@@ -653,7 +653,7 @@ private:
 		using namespace constants;
 		using namespace requests;
 		static const uint32_t attchProps[] = {PropTag::ATTACHLONGFILENAME};
-		msg<TRACE>("Inserting message ", message.fid, "/", message.mid);
+		msg<TRACE>("Inserting message ", message.fid, "/", util::gcToValue(message.mid));
 		reuse.reset();
 		stmt.call(sqlite3_reset);
 		uint32_t instance = client.send<LoadMessageInstanceRequest>(usrpath, "", 65001, false, 0, message.mid).instanceId;
@@ -706,10 +706,9 @@ private:
 		stmt.call(sqlite3_bind_int64, stmt.indexOf(":message_id"), util::gcToValue(message.mid));
 		stmt.call(sqlite3_bind_int,	stmt.indexOf(":attach_indexed"), int(reuse.attchs.length() > 0));
 		stmt.call(sqlite3_bind_blob64, stmt.indexOf(":entryid"), message.entryid.binaryData(), message.entryid.binaryLength(), nullptr);
+		stmt.call(sqlite3_bind_int64, stmt.indexOf(":folder_id"), message.fid);
 		if((it = reuse.props.find(PropTag::CHANGENUMBER)) != reuse.props.end())
 			stmt.call(sqlite3_bind_int64, stmt.indexOf(":change_num"), util::gcToValue(it->second.value.u64));
-		if((it = reuse.props.find(PropTag::FOLDERID)) != reuse.props.end())
-			stmt.call(sqlite3_bind_int64, stmt.indexOf(":folder_id"), it->second.value.u64);
 		stmt.bindText(":message_class", reuse.messageclass);
 		if((it = reuse.props.find(PropTag::LASTMODIFICATIONTIME)) != reuse.props.end() ||
 		   (it = reuse.props.find(PropTag::MESSAGEDELIVERYTIME)) != reuse.props.end())
