@@ -452,15 +452,15 @@ private:
 		}
 	} reuse; ///< Objects that can be reused to save on memory allocations
 
-	static array<structures::PropertyName, 12> namedTags; ///< Array of named tags to query
-	static constexpr array<uint16_t, 12> namedTagTypes = {
-//	    PropvalType::STRING_ARRAY,
+	static array<structures::PropertyName, 14> namedTags; ///< Array of named tags to query
+	static constexpr array<uint16_t, 14> namedTagTypes = {
+	    PropvalType::STRING_ARRAY,
 	    PropvalType::STRING, PropvalType::STRING, PropvalType::STRING,
 	    PropvalType::STRING, PropvalType::STRING, PropvalType::STRING,
 	    PropvalType::STRING, PropvalType::STRING,
 	    PropvalType::STRING, PropvalType::STRING,
 	    PropvalType::STRING, PropvalType::STRING,
-//	    PropvalType::STRING_ARRAY
+	    PropvalType::STRING_ARRAY
 	}; ///< Types of the named tags
 
 	static constexpr array<uint32_t, 12> msgtags1 = {
@@ -692,10 +692,12 @@ private:
 			structures::TaggedPropval& tp = it->second;
 			if(tp.type != PropvalType::STRING && tp.type != PropvalType::STRING_ARRAY)
 				continue;
-			//TODO: Add support for string array
-			strjoin(reuse.other, reuse.other.empty()? "" : "\n", tp.type == PropvalType::STRING? tp.value.str : "");
+			reuse.other += reuse.other.empty()? "" : "\n";
+			if(tp.type == PropvalType::STRING)
+				reuse.other +=  tp.value.str;
+			else
+				reuse.other += strjoin(tp.value.astr.begin(), tp.value.astr.end(), "\n", [](char** it){return *it;});
 		}
-
 		stmt.bindText(":sender", reuse.sender);
 		stmt.bindText(":sending", reuse.sending);
 		stmt.bindText(":recipients", reuse.rcpts);
@@ -754,8 +756,8 @@ private:
 	}
 };
 
-array<structures::PropertyName, 12> IndexDB::namedTags = {
-//    structures::PropertyName(structures::GUID("00020329-0000-0000-C000-000000000046"), "Keywords"), //categories
+array<structures::PropertyName, 14> IndexDB::namedTags = {
+    structures::PropertyName(structures::GUID("00020329-0000-0000-C000-000000000046"), "Keywords"), //categories
     structures::PropertyName(structures::GUID("00062004-0000-0000-C000-000000000046"), 0x8005),     //fileas
     structures::PropertyName(structures::GUID("00062002-0000-0000-C000-000000000046"), 0x8208),     //location
     structures::PropertyName(structures::GUID("00062004-0000-0000-C000-000000000046"), 0x8083),     //email1
@@ -768,7 +770,7 @@ array<structures::PropertyName, 12> IndexDB::namedTags = {
     structures::PropertyName(structures::GUID("00062004-0000-0000-C000-000000000046"), 0x801c),     //other_address
     structures::PropertyName(structures::GUID("00062004-0000-0000-C000-000000000046"), 0x801b),     //work_address
     structures::PropertyName(structures::GUID("00062003-0000-0000-C000-000000000046"), 0x811f),     //task_owner
-//    structures::PropertyName(structures::GUID("00062008-0000-0000-C000-000000000046"), 0x8539)      //companies
+    structures::PropertyName(structures::GUID("00062008-0000-0000-C000-000000000046"), 0x8539)      //companies
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

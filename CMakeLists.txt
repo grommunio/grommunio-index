@@ -3,7 +3,7 @@ project(grommunio-index VERSION 0.1)
 set(CMAKE_CXX_STANDARD 17)
 
 find_package(SQLite3 REQUIRED)
-find_package(exmdbpp 1.4 REQUIRED)
+find_package(exmdbpp 1.8 REQUIRED)
 
 add_executable(grommunio-index grommunio-index.cpp)
 target_include_directories(grommunio-index PRIVATE ${SQLite3_INCLUDE_DIRS})
