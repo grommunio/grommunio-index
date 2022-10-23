@@ -4,6 +4,8 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(SQLite3 REQUIRED)
 find_package(exmdbpp 1.8 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_get_variable(UNITDIR systemd systemdsystemunitdir)
 
 add_executable(grommunio-index grommunio-index.cpp)
 target_include_directories(grommunio-index PRIVATE ${SQLite3_INCLUDE_DIRS})
@@ -15,3 +17,5 @@ if(LOGGING_TRACE)
 endif()
 
 install(TARGETS grommunio-index RUNTIME)
+install(PROGRAMS grommunio-index-run.sh DESTINATION bin)
+install(FILES grommunio-index.service grommunio-index.timer DESTINATION ${UNITDIR})
