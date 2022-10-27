@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(grommunio-index VERSION 0.1)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(SQLite3 REQUIRED)
 find_package(exmdbpp 1.8 REQUIRED)
