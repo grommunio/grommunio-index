@@ -17,5 +17,5 @@ if(LOGGING_TRACE)
 endif()
 
 install(TARGETS grommunio-index RUNTIME)
-install(PROGRAMS grommunio-index-run.sh DESTINATION bin)
+install(PROGRAMS grommunio-index-run.sh DESTINATION sbin)
 install(FILES grommunio-index.service grommunio-index.timer DESTINATION ${UNITDIR})
