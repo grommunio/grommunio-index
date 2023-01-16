@@ -13,4 +13,5 @@ ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictRealtime=true
 Type=oneshot
+User=groweb
 ExecStart=/usr/sbin/grommunio-index-run.sh

@@ -229,8 +229,6 @@ public:
 	    usrpath(userdir), client(exmdbHost, exmdbPort, userdir, true, ExmdbClient::AUTO_RECONNECT),
 	    recheck(recheck)
 	{
-		if(!filesystem::exists(userdir))
-			throw runtime_error("Cannot access "s + userdir.c_str() + " (absent or permission problem)");
 		if(outpath.empty())
 		{
 			dbpath = userdir;

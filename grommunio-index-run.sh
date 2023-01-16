@@ -17,15 +17,7 @@ mysql_query='select username, maildir from users where id <> 0 and maildir <> ""
 mysql_cmd="mysql ${mysql_params} ${mysql_username} ${mysql_password} ${mysql_host} ${mysql_port} ${mysql_dbname}"
 web_index_path="/var/lib/grommunio-web/sqlite-index"
 
-# ensure correct ownership of the root dir
-chown groweb:groweb "${web_index_path}"
-
 echo "${mysql_query[@]}" | ${mysql_cmd} | while read -r username maildir ; do
   [ -e "${web_index_path}/${username}/" ] || mkdir "${web_index_path}/${username}/"
-  # set ownership on dir (prevent collision with gweb)
-  chown groweb:groweb "${web_index_path}/${username}"
-  # run the index
   grommunio-index "$maildir" -o "$web_index_path/$username/index.sqlite3"
-  # set the owner on the index db
-  chown groweb:groweb "${web_index_path}/${username}/index.sqlite3"
 done
