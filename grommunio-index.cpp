@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
+#include <optional>
+#include <string>
 
 #include <exmdbpp/constants.h>
 #include <exmdbpp/queries.h>
@@ -777,7 +779,7 @@ array<structures::PropertyName, 14> IndexDB::namedTags = {
 
 static string exmdbHost; ///< Exmdb host to connect to
 static string exmdbPort; ///< Port of the exmdb connection
-static string userpath; ///< Path to the user's home directory
+static optional<string> userpath; ///< Path to the user's home directory
 static string outpath; ///< Index database path (empty for default)
 static bool recheck = false; ///< Check folders even when they were not changed since the last indexing
 static bool create = false; ///< Always create a new index instead of updating
@@ -876,15 +878,15 @@ static void parseArgs(const char* argv[])
 					}
 				}
 		}
-		else if(!userpath.empty())
+		else if(userpath.has_value())
 		{
 			msg<FATAL>("Too many arguments.");
 			exit(RESULT_ARGERR_SYN);
 		}
 		else
-			userpath = arg;
+			userpath.emplace(arg);
 	}
-	if(userpath.empty())
+	if(!userpath.has_value())
 	{
 		msg<FATAL>("Usage: grommunio-index MAILDIR");
 		msg<STATUS>("Option overview: grommunio-index -h");
@@ -900,10 +902,10 @@ static void parseArgs(const char* argv[])
 int main(int, const char* argv[])
 {
 	parseArgs(argv);
-	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", user=", userpath, ", output=", outpath.empty()? "<default>" : outpath);
+	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", user=", userpath.value(), ", output=", outpath.empty()? "<default>" : outpath);
 	IndexDB cache;
 	try {
-		cache = IndexDB(userpath, exmdbHost, exmdbPort, outpath, create, recheck);
+		cache = IndexDB(userpath.value(), exmdbHost, exmdbPort, outpath, create, recheck);
 		cache.refresh();
 	} catch(const runtime_error& err) {
 		msg<FATAL>(err.what());

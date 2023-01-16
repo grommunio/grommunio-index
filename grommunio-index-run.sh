@@ -25,7 +25,7 @@ echo "${mysql_query[@]}" | ${mysql_cmd} | while read -r username maildir ; do
   # set ownership on dir (prevent collision with gweb)
   chown groweb:groweb "${web_index_path}/${username}"
   # run the index
-  grommunio-index "$1" "${maildir}" -o "${web_index_path}/${username}/index.sqlite3"
+  grommunio-index "$maildir" -o "$web_index_path/$username/index.sqlite3"
   # set the owner on the index db
   chown groweb:groweb "${web_index_path}/${username}/index.sqlite3"
 done
