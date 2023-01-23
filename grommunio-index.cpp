@@ -23,11 +23,11 @@
 #include <exmdbpp/util.h>
 #include <sqlite3.h>
 
-using namespace std;
 using namespace std::string_literals;
 using namespace exmdbpp;
 using namespace exmdbpp::constants;
 using namespace exmdbpp::queries;
+namespace fs = std::filesystem;
 
 enum {RESULT_OK, RESULT_ARGERR_SYN, RESULT_ARGERR_SEM, RESULT_EXMDB_ERR}; ///< Exit codes
 enum LEVEL {FATAL, ERROR, WARNING, STATUS, INFO, DEBUG, TRACE, LOGLEVELS}; ///< Log levels
@@ -61,8 +61,8 @@ struct msg
 	{
 		if(level > verbosity)
 			return;
-		cout << "[" << levelname[level] << "] ";
-		(cout << ... << args) << endl;
+		std::cout << "[" << levelname[level] << "] ";
+		(std::cout << ... << args) << std::endl;
 	}
 };
 
@@ -91,12 +91,12 @@ template<> struct msg<TRACE>
  * @returns    unordered_map containing objects
  */
 template<typename K, typename V, class InputIt, typename F>
-inline void mkMapMv(InputIt first, InputIt last, unordered_map<K, V>& umap, F&& key)
+inline void mkMapMv(InputIt first, InputIt last, std::unordered_map<K, V>& umap, F&& key)
 {
 	umap.clear();
 	umap.reserve(distance(first, last));
 	for(; first != last; ++first)
-		umap.try_emplace(key(*first), move(*first));
+		umap.try_emplace(key(*first), std::move(*first));
 }
 
 /**
@@ -118,11 +118,11 @@ inline void mkMapMv(InputIt first, InputIt last, unordered_map<K, V>& umap, F&& 
  * @return     Joined string
  */
 template<class InputIt, typename F>
-inline string strjoin(InputIt first, InputIt last, const std::string_view& glue = "",F&& tf=[](InputIt it){return *it;})
+inline std::string strjoin(InputIt first, InputIt last, const std::string_view& glue = "",F&& tf=[](InputIt it){return *it;})
 {
     if(first == last)
-        return string();
-    string str(tf(first));
+		return std::string();
+	std::string str(tf(first));
 	while(++first != last)
 	{
 		str += glue;
@@ -142,7 +142,7 @@ inline string strjoin(InputIt first, InputIt last, const std::string_view& glue 
  * @return     Reference to dest
  */
 template<typename... Args>
-inline string& strjoin(string& dest, Args&&... args)
+inline std::string& strjoin(std::string& dest, Args&&... args)
 {
 	((dest += std::forward<Args>(args)), ...);
 	return dest;
@@ -176,7 +176,7 @@ inline bool tagFinder(const structures::TaggedPropval& tp)
  * @tparam     tag   { description }
  */
 template<uint32_t tag>
-inline void addTagStrLine(string& dest, const ExmdbQueries::PropvalList& pl)
+inline void addTagStrLine(std::string& dest, const ExmdbQueries::PropvalList& pl)
 {
 	static_assert(PropvalType::tagType(tag) != PropvalType::STRING || PropvalType::tagType(tag) != PropvalType::WSTRING,
 	              "Can only add string tags");
@@ -203,11 +203,11 @@ public:
 		if(db)
 			sqlite3_close(db);
 		recheck = other.recheck;
-		dbpath = move(other.dbpath);
-		usrpath	= move(other.usrpath);
-		client = move(other.client);
-		reuse = move(other.reuse);
-		namedProptags = move(other.namedProptags);
+		dbpath = std::move(other.dbpath);
+		usrpath	= std::move(other.usrpath);
+		client = std::move(other.client);
+		reuse = std::move(other.reuse);
+		namedProptags = std::move(other.namedProptags);
 		db = other.db;
 		update = other.update;
 		other.db = nullptr;
@@ -233,7 +233,7 @@ public:
 	 * @param      exmdbPort  Port for exmdb connection
 	 * @param      outpath    Path of the output database or empty for default
 	 */
-	IndexDB(const filesystem::path& userdir, const string& exmdbHost, const string& exmdbPort, const string& outpath,
+	IndexDB(const fs::path& userdir, const std::string& exmdbHost, const std::string& exmdbPort, const std::string& outpath,
 	        bool create=false, bool recheck=false) :
 	    usrpath(userdir), client(exmdbHost, exmdbPort, userdir, true, ExmdbClient::AUTO_RECONNECT),
 	    recheck(recheck)
@@ -242,24 +242,24 @@ public:
 		{
 			dbpath = userdir;
 			dbpath /= "exmdb";
-			if(!filesystem::exists(dbpath))
-				throw runtime_error("Cannot access "s + dbpath.c_str() + " (absent or permission problem)");
+			if(!fs::exists(dbpath))
+				throw std::runtime_error("Cannot access "s + dbpath.c_str() + " (absent or permission problem)");
 			dbpath /= "index.sqlite3";
 		}
 		else
 		{
 			dbpath = outpath;
-			if(filesystem::is_directory(dbpath))
+			if(fs::is_directory(dbpath))
 				dbpath /= "index.sqlite3";
 		}
-		update = filesystem::exists(dbpath);
+		update = fs::exists(dbpath);
 		if (update)
 			msg<STATUS>("Updating existing index "s + dbpath.c_str());
 		else
 			msg<STATUS>("Creating new index "s + dbpath.c_str());
 		int res = sqlite3_open(dbpath.c_str(), &db);
 		if(res != SQLITE_OK)
-			throw runtime_error("Failed to open index database: "s + sqlite3_errmsg(db));
+			throw std::runtime_error("Failed to open index database: "s + sqlite3_errmsg(db));
 		if(update && create)
 		{
 			sqliteExec("DROP TABLE IF EXISTS hierarchy;"
@@ -282,7 +282,7 @@ public:
 		                 " date UNINDEXED, "
 		                 " tokenize=unicode61)");
 		if(res != SQLITE_OK)
-			throw runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
+			throw std::runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
 	}
 
 	/**
@@ -310,7 +310,7 @@ public:
 	}
 
 private:
-	using PropvalMap = unordered_map<uint32_t, structures::TaggedPropval>; ///< Tag ID -> TaggedPropval mapping
+	using PropvalMap = std::unordered_map<uint32_t, structures::TaggedPropval>; ///< Tag ID -> TaggedPropval mapping
 
 	/**
 	 * @brief      SQLite3 statement wrapper class
@@ -331,7 +331,7 @@ private:
 		{
 			int res = sqlite3_prepare_v2(db, zSql, -1, &stmt, nullptr);
 			if(res != SQLITE_OK)
-				throw runtime_error(sqlite3_errmsg(db));
+				throw std::runtime_error(sqlite3_errmsg(db));
 		}
 
 		~SQLiteStmt() {sqlite3_finalize(stmt);}
@@ -359,7 +359,7 @@ private:
 		{
 			int res = func(stmt, std::forward<cArgs>(args)...);
 			if(res != SQLITE_OK)
-				throw runtime_error(sqlite3_errmsg(sqlite3_db_handle(stmt)));
+				throw std::runtime_error(sqlite3_errmsg(sqlite3_db_handle(stmt)));
 		}
 
 		/**
@@ -376,8 +376,8 @@ private:
 		{
 			if(str.size() == 0)
 				return call(sqlite3_bind_null, index);
-			if(str.size() > numeric_limits<int>::max())
-				throw out_of_range("String lengths exceeds maximum");
+			if(str.size() > std::numeric_limits<int>::max())
+				throw std::out_of_range("String lengths exceeds maximum");
 			call(sqlite3_bind_text, index, str.data(), int(str.size()), SQLITE_STATIC);
 		}
 
@@ -405,7 +405,7 @@ private:
 		{
 			int index = sqlite3_bind_parameter_index(stmt, name);
 			if(!index)
-				throw out_of_range("Cannot find named bind parameter "s + name);
+				throw std::out_of_range("Cannot find named bind parameter "s + name);
 			return index;
 		}
 
@@ -422,7 +422,7 @@ private:
 		{
 			int result = sqlite3_step(stmt);
 			if(result != SQLITE_DONE && result != SQLITE_ROW)
-				throw runtime_error("SQLite query failed: "+to_string(result));
+				throw std::runtime_error("SQLite query failed: " + std::to_string(result));
 			return result;
 		}
 
@@ -434,7 +434,7 @@ private:
 	 */
 	struct Message
 	{
-		inline Message(uint64_t mid, uint64_t fid,  structures::TaggedPropval& entryid) : mid(mid), fid(fid), entryid(move(entryid)) {}
+		inline Message(uint64_t mid, uint64_t fid,  structures::TaggedPropval& entryid) : mid(mid), fid(fid), entryid(std::move(entryid)) {}
 
 		uint64_t mid, fid;
 		structures::TaggedPropval entryid;
@@ -451,7 +451,7 @@ private:
 
 	struct
 	{
-		string attchs, body, other, rcpts, sender, sending, subject, messageclass;
+		std::string attchs, body, other, rcpts, sender, sending, subject, messageclass;
 		PropvalMap props;
 
 		void reset()
@@ -461,8 +461,8 @@ private:
 		}
 	} reuse; ///< Objects that can be reused to save on memory allocations
 
-	static array<structures::PropertyName, 14> namedTags; ///< Array of named tags to query
-	static constexpr array<uint16_t, 14> namedTagTypes = {
+	static std::array<structures::PropertyName, 14> namedTags; ///< Array of named tags to query
+	static constexpr std::array<uint16_t, 14> namedTagTypes = {
 	    PropvalType::STRING_ARRAY,
 	    PropvalType::STRING, PropvalType::STRING, PropvalType::STRING,
 	    PropvalType::STRING, PropvalType::STRING, PropvalType::STRING,
@@ -472,7 +472,7 @@ private:
 	    PropvalType::STRING_ARRAY
 	}; ///< Types of the named tags
 
-	static constexpr array<uint32_t, 12> msgtags1 = {
+	static constexpr std::array<uint32_t, 12> msgtags1 = {
 	     PropTag::ENTRYID, PropTag::SENTREPRESENTINGNAME, PropTag::SENTREPRESENTINGSMTPADDRESS,
 	     PropTag::SUBJECT, PropTag::BODY, PropTag::SENDERNAME,
 	     PropTag::SENDERSMTPADDRESS, PropTag::INTERNETCODEPAGE,
@@ -480,7 +480,7 @@ private:
 	     PropTag::MESSAGEDELIVERYTIME, PropTag::LASTMODIFICATIONTIME
 	}; ///< Part 1 of message tags to query
 
-	static constexpr array<uint32_t, 19> msgtags2 = {
+	static constexpr std::array<uint32_t, 19> msgtags2 = {
 	    PropTag::DISPLAYNAME, PropTag::DISPLAYNAMEPREFIX, PropTag::HOMETELEPHONENUMBER,
 	    PropTag::MOBILETELEPHONENUMBER, PropTag::BUSINESSTELEPHONENUMBER,
 	    PropTag::BUSINESSFAXNUMBER, PropTag::ASSISTANTTELEPHONENUMBER,
@@ -491,10 +491,10 @@ private:
 	    PropTag::PRIMARYTELEPHONENUMBER, PropTag::RADIOTELEPHONENUMBER, PropTag::TELEXNUMBER,
 	}; ///< Part 2 of message tags to query
 
-	filesystem::path usrpath; ///< Path to the user's home directory
-	filesystem::path dbpath; ///< Path to the index database
+	fs::path usrpath; ///< Path to the user's home directory
+	fs::path dbpath; ///< Path to the index database
 	ExmdbClient client; ///< Exmdb client to use
-	vector<uint32_t> namedProptags; ///< Store specific named proptag IDs
+	std::vector<uint32_t> namedProptags; ///< Store specific named proptag IDs
 	sqlite3* db = nullptr; ///< SQLite database connection
 	bool update = false; ///< Whether index is updated
 	bool recheck = false; ///< Whether to check all folders regardless of timestamp
@@ -530,7 +530,7 @@ private:
 	{
 		auto res = find_if(tplist.begin(), tplist.end(), [tag](const structures::TaggedPropval& t){return t.tag == tag;});
 		if(res == tplist.end())
-			throw out_of_range("Failed to find tag.");
+			throw std::out_of_range("Failed to find tag.");
 		return *res;
 	}
 
@@ -539,7 +539,7 @@ private:
 	 *
 	 * @return     Pair of messages and hierarchy entries to update
 	 */
-	pair<vector<Message>, vector<Hierarchy>> getUpdates()
+	std::pair<std::vector<Message>, std::vector<Hierarchy>> getUpdates()
 	{
 		using namespace exmdbpp::constants;
 		using namespace exmdbpp::requests;
@@ -555,8 +555,8 @@ private:
 		client.send<UnloadTableRequest>(usrpath, lhtResponse.tableId);
 		msg<DEBUG>("Loaded ", qtResponse.entries.size(), " folders");
 		SQLiteStmt stmt(db, "SELECT commit_max, max_cn FROM hierarchy WHERE folder_id=?");
-		vector<Message> messages;
-		vector<Hierarchy> hierarchy;
+		std::vector<Message> messages;
+		std::vector<Hierarchy> hierarchy;
 		for(auto& entry : qtResponse.entries)
 		{
 			uint64_t lastCn = 0, maxCn = 0;
@@ -586,7 +586,7 @@ private:
 				uint64_t cn = util::gcToValue(getTag(content, PropTag::CHANGENUMBER).value.u64);
 				if(cn <= lastCn)
 					continue;
-				maxCn = max(maxCn, cn);
+				maxCn = std::max(maxCn, cn);
 				messages.emplace_back(getTag(content, PropTag::MID).value.u64, folderId, getTag(content, PropTag::ENTRYID));
 			}
 			msg<TRACE>("Checked folder ", folderId, " with ", contents.entries.size(), " messages. ",
@@ -624,7 +624,7 @@ private:
 	 *
 	 * @param      messages  Messages to insert
 	 */
-	void insertMessages(const vector<Message>& messages)
+	void insertMessages(const std::vector<Message>& messages)
 	{
 		msg<DEBUG>("Inserting new messages");
 		if(messages.empty())
@@ -644,7 +644,7 @@ private:
 		for(const Message& message : messages)
 		{
 			try {insertMessage(stmt, message, msgtags);}
-			catch (exception& e)
+			catch (const std::exception& e)
 			{msg<ERROR>("Failed to insert message ", message.fid, "/", util::gcToValue(message.mid), ": ", e.what());}
 		}
 		sqliteExec("COMMIT");
@@ -657,7 +657,7 @@ private:
 	 * @param      message  Message to insert
 	 * @param      msgtags  List of tag IDs to query
 	 */
-	void insertMessage(SQLiteStmt& stmt, const Message& message, const vector<uint32_t>& msgtags)
+	void insertMessage(SQLiteStmt& stmt, const Message& message, const std::vector<uint32_t>& msgtags)
 	{
 		using namespace constants;
 		using namespace requests;
@@ -666,7 +666,7 @@ private:
 		reuse.reset();
 		stmt.call(sqlite3_reset);
 		uint32_t instance = client.send<LoadMessageInstanceRequest>(usrpath, "", 65001, false, 0, message.mid).instanceId;
-		auto rcpts = client.send<GetMessageInstanceRecipientsRequest>(usrpath, instance, 0, numeric_limits<uint16_t>::max());
+		auto rcpts = client.send<GetMessageInstanceRecipientsRequest>(usrpath, instance, 0, std::numeric_limits<uint16_t>::max());
 		auto attchs = client.send<QueryMessageInstanceAttachmentsTableRequest>(usrpath, instance, attchProps, 0, 0);
 		auto propvals = client.send<GetInstancePropertiesRequest>(usrpath, 0, instance, msgtags).propvals;
 		client.send<UnloadInstanceRequest>(usrpath, instance);
@@ -737,7 +737,7 @@ private:
 		using namespace requests;
 		auto response = client.send<GetNamedPropIdsRequest>(usrpath, false, namedTags);
 		if(response.propIds.size() != namedTagTypes.size())
-			throw out_of_range("Number of named property IDs does not match expected count");
+			throw std::out_of_range("Number of named property IDs does not match expected count");
 		std::vector<uint32_t> propTags(namedTagTypes.size());
 		transform(namedTagTypes.begin(), namedTagTypes.end(), response.propIds.begin(), propTags.begin(),
 		          [](uint16_t id, uint16_t type) {return uint32_t(id) << 16 | type;});
@@ -765,7 +765,7 @@ private:
 	}
 };
 
-array<structures::PropertyName, 14> IndexDB::namedTags = {
+std::array<structures::PropertyName, 14> IndexDB::namedTags = {
     structures::PropertyName(structures::GUID("00020329-0000-0000-C000-000000000046"), "Keywords"), //categories
     structures::PropertyName(structures::GUID("00062004-0000-0000-C000-000000000046"), 0x8005),     //fileas
     structures::PropertyName(structures::GUID("00062002-0000-0000-C000-000000000046"), 0x8208),     //location
@@ -784,10 +784,10 @@ array<structures::PropertyName, 14> IndexDB::namedTags = {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-static string exmdbHost; ///< Exmdb host to connect to
-static string exmdbPort; ///< Port of the exmdb connection
-static optional<string> userpath; ///< Path to the user's home directory
-static string outpath; ///< Index database path (empty for default)
+static std::string exmdbHost; ///< Exmdb host to connect to
+static std::string exmdbPort; ///< Port of the exmdb connection
+static std::optional<std::string> userpath; ///< Path to the user's home directory
+static std::string outpath; ///< Index database path (empty for default)
 static bool recheck = false; ///< Check folders even when they were not changed since the last indexing
 static bool create = false; ///< Always create a new index instead of updating
 
@@ -798,7 +798,7 @@ static bool create = false; ///< Always create a new index instead of updating
  */
 [[noreturn]] static void printHelp(const char* name)
 {
-	cout << "grommunio mailbox indexing tool\n"
+	std::cout << "grommunio mailbox indexing tool\n"
 	        "\nUsage: " << name << " [-c] [-e host] [-f] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
 	        "\nPositional arguments:\n"
 	        "\t userpath\t\tPath to the user's mailbox directory\n"
@@ -903,7 +903,7 @@ static void parseArgs(const char* argv[])
 		exmdbHost = "localhost";
 	if(exmdbPort.empty())
 		exmdbPort = "5000";
-	verbosity = min(max(verbosity, 0), LOGLEVELS-1);
+	verbosity = std::min(std::max(verbosity, 0), LOGLEVELS-1);
 }
 
 int main(int, const char* argv[])
@@ -914,7 +914,7 @@ int main(int, const char* argv[])
 	try {
 		cache = IndexDB(userpath.value(), exmdbHost, exmdbPort, outpath, create, recheck);
 		cache.refresh();
-	} catch(const runtime_error& err) {
+	} catch(const std::runtime_error& err) {
 		msg<FATAL>(err.what());
 		return RESULT_ARGERR_SEM;
 	}
