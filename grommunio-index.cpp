@@ -133,9 +133,9 @@ inline string strjoin(InputIt first, InputIt last, const std::string_view& glue 
  * @return     Reference to dest
  */
 template<typename... Args>
-inline string& strjoin(string& dest, const Args&... args)
+inline string& strjoin(string& dest, Args&&... args)
 {
-	((dest += args), ...);
+	((dest += std::forward<Args>(args)), ...);
 	return dest;
 }
 
