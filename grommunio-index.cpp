@@ -14,8 +14,8 @@
 #include <exmdbpp/util.h>
 #include <sqlite3.h>
 
-
 using namespace std;
+using namespace std::string_literals;
 using namespace exmdbpp;
 using namespace exmdbpp::constants;
 using namespace exmdbpp::queries;
@@ -250,7 +250,7 @@ public:
 			msg<STATUS>("Creating new index "s + dbpath.c_str());
 		int res = sqlite3_open(dbpath.c_str(), &db);
 		if(res != SQLITE_OK)
-			throw runtime_error(string("Failed to open index database: ")+sqlite3_errmsg(db));
+			throw runtime_error("Failed to open index database: "s + sqlite3_errmsg(db));
 		if(update && create)
 		{
 			sqliteExec("DROP TABLE IF EXISTS hierarchy;"
@@ -273,7 +273,7 @@ public:
 		                 " date UNINDEXED, "
 		                 " tokenize=unicode61)");
 		if(res != SQLITE_OK)
-			throw runtime_error(string("Failed to initialize index database: ")+sqlite3_errmsg(db));
+			throw runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
 	}
 
 	/**
@@ -396,7 +396,7 @@ private:
 		{
 			int index = sqlite3_bind_parameter_index(stmt, name);
 			if(!index)
-				throw out_of_range(string("Cannot find named bind parameter ")+name);
+				throw out_of_range("Cannot find named bind parameter "s + name);
 			return index;
 		}
 
