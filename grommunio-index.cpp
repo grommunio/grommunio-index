@@ -3,10 +3,19 @@
  * SPDX-FileCopyrightText: 2022 grommunio GmbH
  */
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <exmdbpp/constants.h>
 #include <exmdbpp/queries.h>
@@ -348,7 +357,7 @@ private:
 		template<typename... fArgs, typename... cArgs>
 		void call(int(*func)(sqlite3_stmt*, fArgs...), cArgs&&... args)
 		{
-			int res = func(stmt, args...);
+			int res = func(stmt, std::forward<cArgs>(args)...);
 			if(res != SQLITE_OK)
 				throw runtime_error(sqlite3_errmsg(sqlite3_db_handle(stmt)));
 		}
