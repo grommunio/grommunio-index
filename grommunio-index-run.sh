@@ -9,8 +9,14 @@ fi
 
 mysql_params="--skip-column-names --skip-line-numbers"
 mysql_username=$(sed -ne 's/^mysql_username\s*=\s*\(.*\)/-u\1/p' ${MYSQL_CFG})
+if [ -z "$mysql_username" ]; then
+	mysql_username="-uroot"
+fi
 mysql_password=$(sed -ne 's/^mysql_password\s*=\s*\(.*\)/-p\1/p' ${MYSQL_CFG})
 mysql_dbname=$(sed -ne 's/^mysql_dbname\s*=\s*\(.*\)/\1/p' ${MYSQL_CFG})
+if [ -z "$mysql_dbname" ]; then
+	mysql_dbname="email"
+fi
 mysql_host=$(sed -ne 's/^mysql_host\s*=\s*\(.*\)/-h\1/p' ${MYSQL_CFG})
 mysql_port=$(sed -ne 's/^mysql_port\s*=\s*\(.*\)/-P\1/p' ${MYSQL_CFG})
 mysql_query='select username, maildir from users where id <> 0 and maildir <> "";'
