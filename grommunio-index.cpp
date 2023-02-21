@@ -605,7 +605,7 @@ private:
 	 */
 	void removeMessages(const std::vector<Message>& messages)
 	{
-		msg<DEBUG>("Removing modified messages");
+		msg<DEBUG>("Removing ", messages.size(), " modified messages");
 		if(!update)
 			return;
 		SQLiteStmt stmt(db, "DELETE FROM messages WHERE message_id=?");
@@ -629,6 +629,7 @@ private:
 		msg<DEBUG>("Inserting new messages");
 		if(messages.empty())
 			return;
+		client.reconnect();
 		namedProptags = getNamedProptags();
 		std::vector<uint32_t> msgtags;
 		msgtags.resize(namedProptags.size()+msgtags1.size()+msgtags2.size());
