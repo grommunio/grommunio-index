@@ -1,11 +1,10 @@
 [Unit]
-Description=Daily regeneration of grommunio FTS indexes
+Description=Recurrent regeneration of grommunio FTS indexes
 
 [Timer]
-OnCalendar=daily
-AccuracySec=12h
-Persistent=true
-RandomizedDelaySec=6000
+OnCalendar=*-*-* *:*:0/10:00
+RandomizedDelaySec=300
+Persistent=false
 
 [Install]
 WantedBy=timers.target
