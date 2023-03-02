@@ -3,7 +3,7 @@ grommunio-index
 
 A C++17 program for the generation of grommunio-web fulltext search indexes.
 
-|shield-agpl|_ |shield-release|_ |shield-cov|_ |shield-loc|
+|shield-agpl|_ |shield-release|_ |shield-loc|
 
 .. |shield-agpl| image:: https://img.shields.io/badge/license-AGPL--3.0-green
 .. _shield-agpl: LICENSE.txt
