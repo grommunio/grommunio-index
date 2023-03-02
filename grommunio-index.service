@@ -17,4 +17,5 @@ User=grommunio
 Group=groweb
 # Using Group= drops our normal group from SuppGroups, so re-add it
 SupplementaryGroups=grommunio
+Environment=ADDITIONAL_PARAM=-q
 ExecStart=/usr/sbin/grommunio-index-run.sh

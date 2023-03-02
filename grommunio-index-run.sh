@@ -38,6 +38,10 @@ echo "${MYSQL_QUERY[@]}" | ${MYSQL_CMD} | while read -r USERNAME MAILDIR HOST ; 
 		exit 1
 	fi
 	if [ -n "${MAILDIR}" ] && [ -d "${MAILDIR}" ] && [ -n "${HOST}" ] && [ -d "${WEB_INDEX_PATH}/${USERNAME}" ] || mkdir -p "${WEB_INDEX_PATH}/${USERNAME}/"; then
-		grommunio-index "${MAILDIR}" -e "${HOST}" -o "${WEB_INDEX_PATH}/${USERNAME}/index.sqlite3"
+		if [ -v ADDITIONAL_PARAM ]; then
+			grommunio-index "${ADDITIONAL_PARAM}" "${MAILDIR}" -e "${HOST}" -o "${WEB_INDEX_PATH}/${USERNAME}/index.sqlite3"
+		else
+			grommunio-index "${MAILDIR}" -e "${HOST}" -o "${WEB_INDEX_PATH}/${USERNAME}/index.sqlite3"
+		fi
 	fi
 done
