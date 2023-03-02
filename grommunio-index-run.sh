@@ -9,38 +9,35 @@ fi
 MYSQL_CFG="/etc/gromox/mysql_adaptor.cfg"
 
 if [ ! -e "${MYSQL_CFG}" ] ; then
-  echo "MySQL configuration not found. ($MYSQL_CFG)"
-  exit 1
-fi
-
-mysql_params="--skip-column-names --skip-line-numbers"
-mysql_username=$(sed -ne 's/^mysql_username\s*=\s*\(.*\)/-u\1/p' ${MYSQL_CFG})
-if [ -z "$mysql_username" ]; then
-	mysql_username="-uroot"
-fi
-mysql_password=$(sed -ne 's/^mysql_password\s*=\s*\(.*\)/-p\1/p' ${MYSQL_CFG})
-mysql_dbname=$(sed -ne 's/^mysql_dbname\s*=\s*\(.*\)/\1/p' ${MYSQL_CFG})
-if [ -z "$mysql_dbname" ]; then
-	mysql_dbname="email"
-fi
-if [ "${mysql_dbname:0:1}" = "-" ]; then
-	echo "Cannot use that dbname: $mysql_dbname"
+	echo "MySQL configuration not found. ($MYSQL_CFG)"
 	exit 1
 fi
-mysql_host=$(sed -ne 's/^mysql_host\s*=\s*\(.*\)/-h\1/p' ${MYSQL_CFG})
-mysql_port=$(sed -ne 's/^mysql_port\s*=\s*\(.*\)/-P\1/p' ${MYSQL_CFG})
-mysql_query='select username, maildir from users where id <> 0 and maildir <> "";'
-mysql_cmd="mysql ${mysql_params} ${mysql_username} ${mysql_password} ${mysql_host} ${mysql_port} ${mysql_dbname}"
-web_index_path="/var/lib/grommunio-web/sqlite-index"
 
-# This is hot garbage. If mysql for any reason rejects parameters and
-# manages outputs its help text, it does so to stdout and everything
-# goes down the drain.
-#
-echo "${mysql_query[@]}" | ${mysql_cmd} | while read -r username maildir ; do
-	if [ "${username:0:1}" = "-" ]; then
+MYSQL_PARAMS="--skip-column-names --skip-line-numbers"
+MYSQL_USERNAME=$(sed -ne 's/^mysql_username\s*=\s*\(.*\)/-u\1/p' ${MYSQL_CFG})
+if [ -z "$MYSQL_USERNAME" ]; then
+	MYSQL_USERNAME="-uroot"
+fi
+MYSQL_PASSWORD=$(sed -ne 's/^mysql_password\s*=\s*\(.*\)/-p\1/p' ${MYSQL_CFG})
+MYSQL_DBNAME=$(sed -ne 's/^mysql_dbname\s*=\s*\(.*\)/\1/p' ${MYSQL_CFG})
+if [ -z "$MYSQL_DBNAME" ]; then
+	MYSQL_DBNAME="grommunio"
+fi
+if [ "${MYSQL_DBNAME:0:1}" = "-" ]; then
+	echo "Cannot use that dbname: ${MYSQL_DBNAME}"
+	exit 1
+fi
+MYSQL_HOST=$(sed -ne 's/^mysql_host\s*=\s*\(.*\)/-h\1/p' ${MYSQL_CFG})
+MYSQL_QUERY='SELECT u.username, u.maildir, s.hostname FROM users u JOIN servers s ON u.homeserver = s.id WHERE u.id <> 0 AND u.MAILDIR <> "";'
+
+MYSQL_CMD="mysql ${MYSQL_PARAMS} ${MYSQL_USERNAME} ${MYSQL_PASSWORD} ${MYSQL_HOST} ${MYSQL_DBNAME}"
+WEB_INDEX_PATH="/var/lib/grommunio-web/sqlite-index"
+
+echo "${MYSQL_QUERY[@]}" | ${MYSQL_CMD} | while read -r USERNAME MAILDIR HOST ; do
+	if [ "${USERNAME:0:1}" = "-" ]; then
 		exit 1
 	fi
-	[ -e "${web_index_path}/${username}/" ] || mkdir "${web_index_path}/${username}/"
-  grommunio-index "$maildir" -o "$web_index_path/$username/index.sqlite3"
+	if [ -n "${MAILDIR}" ] && [ -d "${MAILDIR}" ] && [ -n "${HOST}" ] && [ -d "${WEB_INDEX_PATH}/${USERNAME}" ] || mkdir -p "${WEB_INDEX_PATH}/${USERNAME}/"; then
+		grommunio-index "${MAILDIR}" -e "${HOST}" -o "${WEB_INDEX_PATH}/${USERNAME}/index.sqlite3"
+	fi
 done
