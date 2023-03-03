@@ -2,7 +2,7 @@
 Description=Recurrent regeneration of grommunio FTS indexes
 
 [Timer]
-OnCalendar=*-*-* *:*:0/10:00
+OnCalendar=*:0/15
 RandomizedDelaySec=300
 Persistent=false
 
