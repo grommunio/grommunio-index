@@ -28,7 +28,7 @@ if [ "${MYSQL_DBNAME:0:1}" = "-" ]; then
 	exit 1
 fi
 MYSQL_HOST=$(sed -ne 's/^mysql_host\s*=\s*\(.*\)/-h\1/p' ${MYSQL_CFG})
-MYSQL_QUERY='SELECT u.username, u.maildir, COALESCE(s.hostname, "localhost") AS hostname FROM users u LEFT JOIN servers s ON u.homeserver = s.id OR u.homeserver IS NULL AND s.id = 1 WHERE u.id <> 0 AND u.maildir <> "";'
+MYSQL_QUERY='SELECT u.username, u.maildir, COALESCE(s.hostname, "::1") AS hostname FROM users u LEFT JOIN servers s ON u.homeserver = s.id OR u.homeserver IS NULL AND s.id = 1 WHERE u.id <> 0 AND u.maildir <> "";'
 
 MYSQL_CMD="mysql ${MYSQL_PARAMS} ${MYSQL_USERNAME} ${MYSQL_PASSWORD} ${MYSQL_HOST} ${MYSQL_DBNAME}"
 WEB_INDEX_PATH="/var/lib/grommunio-web/sqlite-index"
