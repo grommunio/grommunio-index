@@ -2,7 +2,7 @@
 
 umask 07
 if [ "$(id -u)" = 0 ]; then
-	exec su --group groweb --supp-group gromox --shell "$0" grommunio --
+	exec runuser --group groweb --supp-group gromox --shell "$0" grommunio --
 	exit 1
 fi
 
