@@ -14,11 +14,11 @@ if [ ! -e "${MYSQL_CFG}" ] ; then
 fi
 
 MYSQL_PARAMS="--skip-column-names --skip-line-numbers"
-MYSQL_USERNAME=$(sed -ne 's/^mysql_username\s*=\s*\(.*\)/-u\1/p' ${MYSQL_CFG})
+MYSQL_USERNAME=$(sed -ne 's/^mysql_username\s*=\s*\(.*\)/\1/p' ${MYSQL_CFG})
 if [ -z "$MYSQL_USERNAME" ]; then
-	MYSQL_USERNAME="-uroot"
+	MYSQL_USERNAME="root"
 fi
-MYSQL_PASSWORD=$(sed -ne 's/^mysql_password\s*=\s*\(.*\)/-p\1/p' ${MYSQL_CFG})
+MYSQL_PASSWORD=$(sed -ne 's/^mysql_password\s*=\s*\(.*\)/\1/p' ${MYSQL_CFG})
 MYSQL_DBNAME=$(sed -ne 's/^mysql_dbname\s*=\s*\(.*\)/\1/p' ${MYSQL_CFG})
 if [ -z "$MYSQL_DBNAME" ]; then
 	MYSQL_DBNAME="grommunio"
@@ -28,9 +28,21 @@ if [ "${MYSQL_DBNAME:0:1}" = "-" ]; then
 	exit 1
 fi
 MYSQL_HOST=$(sed -ne 's/^mysql_host\s*=\s*\(.*\)/-h\1/p' ${MYSQL_CFG})
+if [ -z "$MYSQL_HOST" ]; then
+	MYSQL_HOST="localhost"
+fi
 MYSQL_QUERY='SELECT u.username, u.maildir, COALESCE(s.hostname, "::1") AS hostname FROM users u LEFT JOIN servers s ON u.homeserver = s.id OR u.homeserver IS NULL AND s.id = 1 WHERE u.id <> 0 AND u.maildir <> "";'
 
-MYSQL_CMD="mysql ${MYSQL_PARAMS} ${MYSQL_USERNAME} ${MYSQL_PASSWORD} ${MYSQL_HOST} ${MYSQL_DBNAME}"
+CONFIG_FILE=$(mktemp)
+cat <<CONFFILE >"${CONFIG_FILE}"
+[client]
+user=${MYSQL_USERNAME}
+password=${MYSQL_PASSWORD}
+host=${MYSQL_HOST}
+database=${MYSQL_DBNAME}
+CONFFILE
+
+MYSQL_CMD="mysql --defaults-file=${CONFIG_FILE} ${MYSQL_PARAMS}"
 WEB_INDEX_PATH="/var/lib/grommunio-web/sqlite-index"
 
 echo "${MYSQL_QUERY[@]}" | ${MYSQL_CMD} | while read -r USERNAME MAILDIR HOST ; do
@@ -45,3 +57,5 @@ echo "${MYSQL_QUERY[@]}" | ${MYSQL_CMD} | while read -r USERNAME MAILDIR HOST ; 
 		fi
 	fi
 done
+
+rm -f "${CONFIG_FILE}"
