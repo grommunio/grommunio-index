@@ -557,7 +557,7 @@ private:
 		SQLiteStmt stmt(db, "SELECT commit_max, max_cn FROM hierarchy WHERE folder_id=?");
 		std::vector<Message> messages;
 		std::vector<Hierarchy> hierarchy;
-		for(auto& entry : qtResponse.entries)
+		for(auto& entry : qtResponse.entries) try
 		{
 			uint64_t lastCn = 0, maxCn = 0;
 			uint64_t folderIdGc = getTag(entry, PropTag::FOLDERID).value.u64;
@@ -592,6 +592,9 @@ private:
 			msg<TRACE>("Checked folder ", folderId, " with ", contents.entries.size(), " messages. ",
 			           "Total updates now at ", messages.size(), ".");
 			hierarchy.emplace_back(folderId, lctm, maxCn);
+		} catch (const std::out_of_range &e) {
+			msg<ERROR>("An essential property was missing from a folder; cannot proceed");
+			throw EXIT_FAILURE;
 		}
 		msg<INFO>("Need to update ", messages.size(), " message", messages.size() == 1? "": "s",
 		           " and ", hierarchy.size(), " hierarchy entr", hierarchy.size() == 1? "y" : "ies", '.');
@@ -907,7 +910,7 @@ static void parseArgs(const char* argv[])
 	verbosity = std::min(std::max(verbosity, 0), LOGLEVELS-1);
 }
 
-int main(int, const char* argv[])
+int main(int, const char **argv) try
 {
 	parseArgs(argv);
 	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", user=", userpath.value(), ", output=", outpath.empty()? "<default>" : outpath);
@@ -920,4 +923,6 @@ int main(int, const char* argv[])
 		return RESULT_ARGERR_SEM;
 	}
 	return 0;
+} catch (int e) {
+	return e;
 }
