@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <getopt.h>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -844,59 +845,37 @@ static const char* nextArg(const char** &cur)
  *
  * @param      argv  nullptr-terminated array of command line arguments
  */
-static void parseArgs(const char* argv[])
+static void parseArgs(int argc, char **argv)
 {
-	bool noopt = false;
-	for(const char** argp = argv+1; *argp != nullptr; ++argp)
-	{
-		const char* arg = *argp;
-		if(noopt || *arg == '-')
-		{
-			if(*(++arg) == '-')
-			{
-				++arg;
-				if(!strcmp(arg, "create"))	create = true;
-				else if(!strcmp(arg, "help"))	printHelp(*argv);
-				else if(!strcmp(arg, "host"))	exmdbHost = nextArg(argp);
-				else if(!strcmp(arg, "out"))	outpath = nextArg(argp);
-				else if(!strcmp(arg, "port"))	exmdbPort = nextArg(argp);
-				else if(!strcmp(arg, "quiet"))	--verbosity;
-				else if(!strcmp(arg, "recheck"))	recheck = true;
-				else if(!strcmp(arg, "verbose"))++verbosity;
-				else if(!*arg) noopt = true;
-				else
-				{
-					msg<FATAL>("Unknown option '", arg, "'");
-					exit(RESULT_ARGERR_SYN);
-				}
-			}
-			else
-				for(const char* sopt = arg; *sopt; ++sopt)
-				{
-					switch(*sopt)
-					{
-					case 'c': create = true; break;
-					case 'e': exmdbHost = nextArg(argp); break;
-					case 'h': printHelp(*argv); //printHelp never return
-					case 'o': outpath = nextArg(argp); break;
-					case 'p': exmdbPort = nextArg(argp); break;
-					case 'q': --verbosity; break;
-					case 'r': recheck = true; break;
-					case 'v': ++verbosity; break;
-					default:
-						msg<FATAL>("Unknown short option '", *sopt, "'");
-						exit(RESULT_ARGERR_SYN);
-					}
-				}
-		}
-		else if(userpath.has_value())
-		{
-			msg<FATAL>("Too many arguments.");
+	static const struct option longopts[] = {
+		{"create", false, nullptr, 'c'},
+		{"host", true, nullptr, 'e'},
+		{"help", false, nullptr, 'h'},
+		{"outpath", true, nullptr, 'o'},
+		{"port", true, nullptr, 'p'},
+		{"quiet", false, nullptr, 'q'},
+		{"recheck", false, nullptr, 'r'},
+		{"verbose", false, nullptr, 'v'},
+		{},
+	};
+
+	int c;
+	while ((c = getopt_long(argc, argv, "ce:ho:p:qrv", longopts, nullptr)) >= 0) {
+		switch (c) {
+		case 'c': create = true; break;
+		case 'e': exmdbHost = optarg; break;
+		case 'h': printHelp(*argv); break;
+		case 'o': outpath = optarg; break;
+		case 'p': exmdbPort = optarg; break;
+		case 'q': --verbosity; break;
+		case 'r': recheck = true; break;
+		case 'v': ++verbosity; break;
+		default:
 			exit(RESULT_ARGERR_SYN);
 		}
-		else
-			userpath.emplace(arg);
 	}
+	if (argc > optind)
+		userpath.emplace(argv[optind++]);
 	if(!userpath.has_value())
 	{
 		msg<FATAL>("Usage: grommunio-index MAILDIR");
@@ -910,9 +889,9 @@ static void parseArgs(const char* argv[])
 	verbosity = std::min(std::max(verbosity, 0), LOGLEVELS-1);
 }
 
-int main(int, const char **argv) try
+int main(int argc, char **argv) try
 {
-	parseArgs(argv);
+	parseArgs(argc, argv);
 	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", user=", userpath.value(), ", output=", outpath.empty()? "<default>" : outpath);
 	IndexDB cache;
 	try {
