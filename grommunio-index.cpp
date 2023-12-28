@@ -1,33 +1,98 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * SPDX-FileCopyrightText: 2022 grommunio GmbH
+ * SPDX-FileCopyrightText: 2022-2023 grommunio GmbH
  */
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
+#include <getopt.h>
 #include <iostream>
 #include <limits>
+#include <map>
+#include <memory>
+#include <mysql.h>
 #include <optional>
+#include <sqlite3.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
 #include <exmdbpp/constants.h>
 #include <exmdbpp/queries.h>
 #include <exmdbpp/requests.h>
 #include <exmdbpp/util.h>
-#include <sqlite3.h>
+#include <libHX/proc.h>
+#include <libHX/string.h>
+#include <sys/stat.h>
 
 using namespace std::string_literals;
 using namespace exmdbpp;
 using namespace exmdbpp::constants;
 using namespace exmdbpp::queries;
 namespace fs = std::filesystem;
+
+namespace {
+
+using DB_ROW = char **;
+
+class DB_RESULT { /* from gromox/database_mysql.hpp */
+	public:
+	DB_RESULT() = default;
+	DB_RESULT(MYSQL_RES *r) noexcept : m_res(r) {}
+	DB_RESULT(DB_RESULT &&o) noexcept : m_res(o.m_res) { o.m_res = nullptr; }
+	~DB_RESULT() { clear(); }
+
+	DB_RESULT &operator=(DB_RESULT &&o) noexcept
+	{
+		clear();
+		m_res = o.m_res;
+		o.m_res = nullptr;
+		return *this;
+	}
+	void clear() {
+		if (m_res != nullptr)
+			mysql_free_result(m_res);
+		m_res = nullptr;
+	}
+	operator bool() const noexcept { return m_res != nullptr; }
+	bool operator==(std::nullptr_t) const noexcept { return m_res == nullptr; }
+	bool operator!=(std::nullptr_t) const noexcept { return m_res != nullptr; }
+	MYSQL_RES *get() const noexcept { return m_res; }
+	void *release() noexcept
+	{
+		void *p = m_res;
+		m_res = nullptr;
+		return p;
+	}
+
+	size_t num_rows() const { return mysql_num_rows(m_res); }
+	DB_ROW fetch_row() { return mysql_fetch_row(m_res); }
+
+	private:
+	MYSQL_RES *m_res = nullptr;
+};
+
+struct our_del {
+	inline void operator()(FILE *x) const { fclose(x); }
+	inline void operator()(MYSQL *x) const { mysql_close(x); }
+};
+
+struct user_row {
+	std::string username, dir, host;
+};
+
+}
+
+using kvpairs = std::map<std::string, std::string>;
 
 enum {RESULT_OK, RESULT_ARGERR_SYN, RESULT_ARGERR_SEM, RESULT_EXMDB_ERR}; ///< Exit codes
 enum LEVEL {FATAL, ERROR, WARNING, STATUS, INFO, DEBUG, TRACE, LOGLEVELS}; ///< Log levels
@@ -794,6 +859,7 @@ static std::optional<std::string> userpath; ///< Path to the user's home directo
 static std::string outpath; ///< Index database path (empty for default)
 static bool recheck = false; ///< Check folders even when they were not changed since the last indexing
 static bool create = false; ///< Always create a new index instead of updating
+static bool do_all_users;
 
 /**
  * @brief      Print help message
@@ -804,9 +870,11 @@ static bool create = false; ///< Always create a new index instead of updating
 {
 	std::cout << "grommunio mailbox indexing tool\n"
 	        "\nUsage: " << name << " [-c] [-e host] [-f] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
+	          "Usage: " << name << " -A [-c] [-f] [-h] [-p port] [-q] [-v]\n"
 	        "\nPositional arguments:\n"
 	        "\t userpath\t\tPath to the user's mailbox directory\n"
 	        "\nOptional arguments:\n"
+	        "\t-A\t--all    \tAutomatically process all local users (-e, -o ignored)\n"
 	        "\t-c\t--create \tCreate a new index instead of updating\n"
 	        "\t-e\t--host   \tHostname of the exmdb server\n"
 	        "\t-h\t--help   \tShow this help message and exit\n"
@@ -844,64 +912,50 @@ static const char* nextArg(const char** &cur)
  *
  * @param      argv  nullptr-terminated array of command line arguments
  */
-static void parseArgs(const char* argv[])
+static void parseArgs(int argc, char **argv)
 {
-	bool noopt = false;
-	for(const char** argp = argv+1; *argp != nullptr; ++argp)
-	{
-		const char* arg = *argp;
-		if(noopt || *arg == '-')
-		{
-			if(*(++arg) == '-')
-			{
-				++arg;
-				if(!strcmp(arg, "create"))	create = true;
-				else if(!strcmp(arg, "help"))	printHelp(*argv);
-				else if(!strcmp(arg, "host"))	exmdbHost = nextArg(argp);
-				else if(!strcmp(arg, "out"))	outpath = nextArg(argp);
-				else if(!strcmp(arg, "port"))	exmdbPort = nextArg(argp);
-				else if(!strcmp(arg, "quiet"))	--verbosity;
-				else if(!strcmp(arg, "recheck"))	recheck = true;
-				else if(!strcmp(arg, "verbose"))++verbosity;
-				else if(!*arg) noopt = true;
-				else
-				{
-					msg<FATAL>("Unknown option '", arg, "'");
-					exit(RESULT_ARGERR_SYN);
-				}
-			}
-			else
-				for(const char* sopt = arg; *sopt; ++sopt)
-				{
-					switch(*sopt)
-					{
-					case 'c': create = true; break;
-					case 'e': exmdbHost = nextArg(argp); break;
-					case 'h': printHelp(*argv); //printHelp never return
-					case 'o': outpath = nextArg(argp); break;
-					case 'p': exmdbPort = nextArg(argp); break;
-					case 'q': --verbosity; break;
-					case 'r': recheck = true; break;
-					case 'v': ++verbosity; break;
-					default:
-						msg<FATAL>("Unknown short option '", *sopt, "'");
-						exit(RESULT_ARGERR_SYN);
-					}
-				}
-		}
-		else if(userpath.has_value())
-		{
-			msg<FATAL>("Too many arguments.");
+	static const struct option longopts[] = {
+		{"all", false, nullptr, 'A'},
+		{"create", false, nullptr, 'c'},
+		{"host", true, nullptr, 'e'},
+		{"help", false, nullptr, 'h'},
+		{"outpath", true, nullptr, 'o'},
+		{"port", true, nullptr, 'p'},
+		{"quiet", false, nullptr, 'q'},
+		{"recheck", false, nullptr, 'r'},
+		{"verbose", false, nullptr, 'v'},
+		{},
+	};
+
+	int c;
+	while ((c = getopt_long(argc, argv, "Ace:ho:p:qrv", longopts, nullptr)) >= 0) {
+		switch (c) {
+		case 'A': do_all_users = true; break;
+		case 'c': create = true; break;
+		case 'e': exmdbHost = optarg; break;
+		case 'h': printHelp(*argv); break;
+		case 'o': outpath = optarg; break;
+		case 'p': exmdbPort = optarg; break;
+		case 'q': --verbosity; break;
+		case 'r': recheck = true; break;
+		case 'v': ++verbosity; break;
+		default:
 			exit(RESULT_ARGERR_SYN);
 		}
-		else
-			userpath.emplace(arg);
 	}
-	if(!userpath.has_value())
-	{
-		msg<FATAL>("Usage: grommunio-index MAILDIR");
-		msg<STATUS>("Option overview: grommunio-index -h");
-		exit(RESULT_ARGERR_SYN);
+	if (do_all_users) {
+		if (!exmdbHost.empty() || !outpath.empty() || argc > optind) {
+			msg<FATAL>("Cannot combine -A with -e/-o/userpath");
+			exit(RESULT_ARGERR_SYN);
+		}
+	} else {
+		if (argc > optind)
+			userpath.emplace(argv[optind++]);
+		if (!userpath.has_value()) {
+			msg<FATAL>("Usage: grommunio-index MAILDIR");
+			msg<STATUS>("Option overview: grommunio-index -h");
+			exit(RESULT_ARGERR_SYN);
+		}
 	}
 	if(exmdbHost.empty())
 		exmdbHost = "localhost";
@@ -910,9 +964,8 @@ static void parseArgs(const char* argv[])
 	verbosity = std::min(std::max(verbosity, 0), LOGLEVELS-1);
 }
 
-int main(int, const char **argv) try
+static int single_mode()
 {
-	parseArgs(argv);
 	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", user=", userpath.value(), ", output=", outpath.empty()? "<default>" : outpath);
 	IndexDB cache;
 	try {
@@ -923,6 +976,126 @@ int main(int, const char **argv) try
 		return RESULT_ARGERR_SEM;
 	}
 	return 0;
+}
+
+static kvpairs am_read_config(const char *path)
+{
+	std::unique_ptr<FILE, our_del> fp(fopen(path, "r"));
+	if (fp == nullptr) {
+		fprintf(stderr, "%s: %s\n", path, strerror(errno));
+		throw EXIT_FAILURE;
+	}
+	kvpairs vars;
+	hxmc_t *ln = nullptr;
+	while (HX_getl(&ln, fp.get()) != nullptr) {
+		auto eq = strchr(ln, '=');
+		if (eq == nullptr)
+			continue;
+		if (*ln == '#')
+			continue;
+		HX_chomp(ln);
+		*eq++ = '\0';
+		HX_strrtrim(ln);
+		HX_strltrim(eq);
+		vars[ln] = eq;
+	}
+	HXmc_free(ln);
+	/* fill with defaults if empty */
+	vars.try_emplace("mysql_username", "root");
+	vars.try_emplace("mysql_dbname", "grommunio");
+	vars.try_emplace("mysql_host", "localhost");
+	return vars;
+}
+
+static std::vector<user_row> am_read_users(kvpairs &&vars)
+{
+	std::unique_ptr<MYSQL, our_del> conn(mysql_init(nullptr));
+	if (conn == nullptr)
+		throw EXIT_FAILURE;
+	auto pass = vars.find("mysql_password");
+	if (mysql_real_connect(conn.get(), vars["mysql_host"].c_str(),
+	    vars["mysql_username"].c_str(), pass != vars.end() ? pass->second.c_str() : nullptr,
+	    vars["mysql_dbname"].c_str(), strtoul(vars["mysql_port"].c_str(), nullptr, 0),
+	    nullptr, 0) == nullptr) {
+		fprintf(stderr, "mysql_connect: %s\n", mysql_error(conn.get()));
+		throw EXIT_FAILURE;
+	}
+	if (mysql_set_character_set(conn.get(), "utf8mb4") != 0) {
+		fprintf(stderr, "\"utf8mb4\" not available: %s", mysql_error(conn.get()));
+		throw EXIT_FAILURE;
+	}
+
+	static constexpr char query[] =
+		"SELECT u.username, u.maildir, s.hostname FROM users u "
+		"LEFT JOIN servers s ON u.homeserver=s.id WHERE u.id>0";
+	if (mysql_query(conn.get(), query) != 0) {
+		fprintf(stderr, "%s: %s\n", query, mysql_error(conn.get()));
+		throw EXIT_FAILURE;
+	}
+	DB_RESULT myres = mysql_store_result(conn.get());
+	if (myres == nullptr) {
+		fprintf(stderr, "result: %s\n", mysql_error(conn.get()));
+		throw EXIT_FAILURE;
+	}
+	std::vector<user_row> ulist;
+	for (DB_ROW row; (row = myres.fetch_row()) != nullptr; ) {
+		if (row[0] == nullptr)
+			continue;
+		struct stat sb;
+		if (row[1] == nullptr || stat(row[1], &sb) != 0 || !S_ISDIR(sb.st_mode))
+			/* Homedir not present here */
+			continue;
+		auto host = row[2] != nullptr && row[2][0] != '\0' ? row[2] : "::1";
+		ulist.emplace_back(user_row{row[0], row[1], host});
+	}
+	return ulist;
+}
+
+int main(int argc, char **argv) try
+{
+	parseArgs(argc, argv);
+
+	auto cfg = am_read_config("/etc/gromox/mysql_adaptor.cfg");
+	/* Generated index files should not be world-readable */
+	umask(07);
+	if (!do_all_users)
+		return single_mode();
+
+	if (geteuid() == 0) {
+		auto ret = HXproc_switch_user("grommunio", "gromox");
+		if (static_cast<int>(ret) < 0) {
+			fprintf(stderr, "switch_user grommunio/gromox: %s\n", strerror(errno));
+			return EXIT_FAILURE;
+		}
+		/* setuid often disables coredumps, so restart to get them back. */
+		execv(argv[0], argv);
+	}
+	int bigret = EXIT_SUCCESS;
+	static const std::string index_root = "/var/lib/grommunio-web/sqlite-index";
+	for (auto &&u : am_read_users(std::move(cfg))) {
+		auto index_home = index_root + "/" + u.username;
+		if (mkdir(index_home.c_str(), 0777) != 0 && errno != EEXIST) {
+			fprintf(stderr, "mkdir %s: %s\n", index_home.c_str(), strerror(errno));
+			bigret = EXIT_FAILURE;
+			continue;
+		}
+		auto index_file = index_home + "/index.sqlite3";
+		auto now = time(nullptr);
+		char tmbuf[32];
+		strftime(tmbuf, sizeof(tmbuf), "%FT%T", localtime(&now));
+		fprintf(stderr, "[%s] %s %s -e %s -o %s\n", tmbuf, argv[0],
+			u.dir.c_str(), u.host.c_str(), index_file.c_str());
+		userpath.emplace(std::move(u.dir));
+		exmdbHost = std::move(u.host);
+		outpath = std::move(index_file);
+		auto ret = single_mode();
+		if (ret != 0) {
+			fprintf(stderr, "\t... exited with status %d\n", ret);
+			bigret = EXIT_FAILURE;
+		}
+		fprintf(stderr, "\n");
+	}
+	return bigret;
 } catch (int e) {
 	return e;
 }
