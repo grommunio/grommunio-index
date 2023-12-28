@@ -1055,6 +1055,7 @@ int main(int argc, char **argv) try
 {
 	parseArgs(argc, argv);
 
+	auto cfg = am_read_config("/etc/gromox/mysql_adaptor.cfg");
 	/* Generated index files should not be world-readable */
 	umask(07);
 	if (!do_all_users)
@@ -1071,7 +1072,7 @@ int main(int argc, char **argv) try
 	}
 	int bigret = EXIT_SUCCESS;
 	static const std::string index_root = "/var/lib/grommunio-web/sqlite-index";
-	for (auto &&u : am_read_users(am_read_config("/etc/gromox/mysql_adaptor.cfg"))) {
+	for (auto &&u : am_read_users(std::move(cfg))) {
 		auto index_home = index_root + "/" + u.username;
 		if (mkdir(index_home.c_str(), 0777) != 0 && errno != EEXIST) {
 			fprintf(stderr, "mkdir %s: %s\n", index_home.c_str(), strerror(errno));
