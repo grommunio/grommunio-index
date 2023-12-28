@@ -27,7 +27,7 @@ if [ "${MYSQL_DBNAME:0:1}" = "-" ]; then
 	echo "Cannot use that dbname: ${MYSQL_DBNAME}"
 	exit 1
 fi
-MYSQL_HOST=$(sed -ne 's/^mysql_host\s*=\s*\(.*\)/-h\1/p' ${MYSQL_CFG})
+MYSQL_HOST=$(sed -ne 's/^mysql_host\s*=\s*\(.*\)/\1/p' ${MYSQL_CFG})
 if [ -z "$MYSQL_HOST" ]; then
 	MYSQL_HOST="localhost"
 fi
