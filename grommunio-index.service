@@ -14,4 +14,4 @@ ProtectControlGroups=true
 RestrictRealtime=true
 Type=oneshot
 User=root
-ExecStart=/usr/sbin/grommunio-index -Aq
+ExecStart=/usr/bin/grommunio-index -Aq
