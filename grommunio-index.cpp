@@ -595,8 +595,11 @@ private:
 	structures::TaggedPropval& getTag(ExmdbQueries::PropvalList& tplist, uint32_t tag)
 	{
 		auto res = find_if(tplist.begin(), tplist.end(), [tag](const structures::TaggedPropval& t){return t.tag == tag;});
-		if(res == tplist.end())
-			throw std::out_of_range("Failed to find tag.");
+		if(res == tplist.end()) {
+			char temp[128];
+			snprintf(temp, std::size(temp), "failed to find required tag 0x%08X - cannot proceed", tag);
+			throw std::out_of_range(temp);
+		}
 		return *res;
 	}
 
@@ -659,7 +662,7 @@ private:
 			           "Total updates now at ", messages.size(), ".");
 			hierarchy.emplace_back(folderId, lctm, maxCn);
 		} catch (const std::out_of_range &e) {
-			msg<ERROR>("An essential property was missing from a folder; cannot proceed");
+			msg<ERROR>(e.what());
 			throw EXIT_FAILURE;
 		}
 		msg<INFO>("Need to update ", messages.size(), " message", messages.size() == 1? "": "s",
