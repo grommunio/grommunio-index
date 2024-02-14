@@ -959,6 +959,8 @@ static int single_mode()
 	} catch(const std::runtime_error& err) {
 		msg<FATAL>(err.what());
 		return RESULT_ARGERR_SEM;
+	} catch(int e) {
+		return e;
 	}
 	return 0;
 }
