@@ -1062,9 +1062,9 @@ int main(int argc, char **argv) try
 		return single_mode();
 
 	if (geteuid() == 0) {
-		auto ret = HXproc_switch_user("grommunio", "gromox");
+		auto ret = HXproc_switch_user("grommunio", "groweb");
 		if (static_cast<int>(ret) < 0) {
-			fprintf(stderr, "switch_user grommunio/gromox: %s\n", strerror(errno));
+			fprintf(stderr, "switch_user grommunio/groweb: %s\n", strerror(errno));
 			return EXIT_FAILURE;
 		}
 		/* setuid often disables coredumps, so restart to get them back. */
