@@ -13,5 +13,5 @@ ProtectKernelLogs=true
 ProtectControlGroups=true
 RestrictRealtime=true
 Type=oneshot
-User=root
+User=groindex
 ExecStart=/usr/bin/grommunio-index -Aq
