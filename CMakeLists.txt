@@ -17,7 +17,7 @@ separate_arguments(MYSQL_LIBRARIES UNIX_COMMAND "${MYSQL_LIBRARIES}")
 
 add_executable(grommunio-index grommunio-index.cpp)
 target_include_directories(grommunio-index PRIVATE ${SQLite3_INCLUDE_DIRS})
-target_compile_options(grommunio-index PUBLIC ${HX_CFLAGS} ${MYSQL_CFLAGS})
+target_compile_options(grommunio-index PRIVATE ${HX_CFLAGS} ${MYSQL_CFLAGS} -Wall)
 target_link_libraries(grommunio-index ${HX_LIBRARIES} ${MYSQL_LIBRARIES} ${SQLite3_LIBRARIES} exmdbpp::exmdbpp)
 
 option(LOGGING_TRACE "Enable TRACE logging level" OFF)

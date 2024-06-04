@@ -887,25 +887,6 @@ static bool do_all_users;
 }
 
 /**
- * @brief      Advance by one command line argument
- *
- * If there are no more arguments, exit with error.
- *
- * @param      cur   Pointer to current argument
- *
- * @return     Next argument
- */
-static const char* nextArg(const char** &cur)
-{
-	if(*++cur == nullptr)
-	{
-		msg<FATAL>("Missing option argument after '", *(cur-1), "'");
-		exit(RESULT_ARGERR_SYN);
-	}
-	return *cur;
-}
-
-/**
  * @brief      Parse command line arguments
  *
  * Does not return in case of error.
