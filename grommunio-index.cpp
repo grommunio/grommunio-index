@@ -1062,7 +1062,7 @@ int main(int argc, char **argv) try
 		return single_mode();
 
 	if (geteuid() == 0) {
-		auto ret = HXproc_switch_user("grommunio", "groweb");
+		auto ret = HXproc_switch_user("groindex", "groweb");
 		if (static_cast<int>(ret) < 0) {
 			fprintf(stderr, "switch_user grommunio/groweb: %s\n", strerror(errno));
 			return EXIT_FAILURE;
