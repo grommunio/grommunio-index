@@ -3,12 +3,12 @@ grommunio-index
 
 A C++17 program for the generation of grommunio-web fulltext search indexes.
 
-|shield-agpl|_ |shield-release|_ |shield-loc|
+|shield-agpl| |shield-release| |shield-loc|
 
 .. |shield-agpl| image:: https://img.shields.io/badge/license-AGPL--3.0-green
-.. _shield-agpl: LICENSE.txt
+                 :target: LICENSE.txt
 .. |shield-release| image:: https://shields.io/github/v/tag/grommunio/grommunio-index
-.. _shield-release: https://github.com/grommunio/grommunio-index/tags
+                    :target: https://github.com/grommunio/grommunio-index/tags
 .. |shield-loc| image:: https://img.shields.io/github/languages/code-size/grommunio/grommunio-index
 
 Support
