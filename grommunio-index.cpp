@@ -325,6 +325,7 @@ public:
 		int res = sqlite3_open(dbpath.c_str(), &db);
 		if(res != SQLITE_OK)
 			throw std::runtime_error("Failed to open index database: "s + sqlite3_errmsg(db));
+		chmod(dbpath.c_str(), 0660); /* sqlite3_open ignores umask */
 		if(update && create)
 		{
 			sqliteExec("DROP TABLE IF EXISTS hierarchy;"
