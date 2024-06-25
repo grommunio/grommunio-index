@@ -1014,7 +1014,8 @@ static std::vector<user_row> am_read_users(kvpairs &&vars)
 
 	static constexpr char query[] =
 		"SELECT u.username, u.maildir, s.hostname FROM users u "
-		"LEFT JOIN servers s ON u.homeserver=s.id WHERE u.id>0";
+		"LEFT JOIN servers s ON u.homeserver=s.id "
+		"WHERE u.maildir != ''";
 	if (mysql_query(conn.get(), query) != 0) {
 		fprintf(stderr, "%s: %s\n", query, mysql_error(conn.get()));
 		throw EXIT_FAILURE;
