@@ -1045,6 +1045,11 @@ int main(int argc, char **argv) try
 	if (!do_all_users)
 		return single_mode();
 
+	/*
+	 * Regular users cannot call setgid(123) even if 123 is in the
+	 * secondary group list already. The .service file has to ensure it has
+	 * the right group already.
+	 */
 	if (geteuid() == 0) {
 		auto ret = HXproc_switch_user("groindex", "groweb");
 		if (static_cast<int>(ret) < 0) {

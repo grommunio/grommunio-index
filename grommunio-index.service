@@ -14,4 +14,9 @@ ProtectControlGroups=true
 RestrictRealtime=true
 Type=oneshot
 User=groindex
+Group=groweb
+# By default, secondary groups are initialized from User (i.e.
+# groindex,groweb,gromoxcf); but setting Group=groweb drops groindex from the
+# secondary list.. so I guess readd it.
+SupplementaryGroups=groindex
 ExecStart=/usr/bin/grommunio-index -Aq
