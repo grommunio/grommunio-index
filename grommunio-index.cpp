@@ -546,7 +546,7 @@ private:
 	     PropTag::MESSAGEDELIVERYTIME, PropTag::LASTMODIFICATIONTIME
 	}; ///< Part 1 of message tags to query
 
-	static constexpr std::array<uint32_t, 19> msgtags2 = {
+	static constexpr std::array<uint32_t, 21> msgtags2 = {
 	    PropTag::DISPLAYNAME, PropTag::DISPLAYNAMEPREFIX, PropTag::HOMETELEPHONENUMBER,
 	    PropTag::MOBILETELEPHONENUMBER, PropTag::BUSINESSTELEPHONENUMBER,
 	    PropTag::BUSINESSFAXNUMBER, PropTag::ASSISTANTTELEPHONENUMBER,
@@ -555,6 +555,7 @@ private:
 	    PropTag::HOME2TELEPHONENUMBER, PropTag::HOMEFAXNUMBER, PropTag::OTHERTELEPHONENUMBER,
 	    PropTag::PAGERTELEPHONENUMBER, PropTag::PRIMARYFAXNUMBER,
 	    PropTag::PRIMARYTELEPHONENUMBER, PropTag::RADIOTELEPHONENUMBER, PropTag::TELEXNUMBER,
+	    PropTag::COMPANYNAME, PropTag::TITLE,
 	}; ///< Part 2 of message tags to query
 
 	fs::path usrpath; ///< Path to the user's home directory
@@ -767,6 +768,10 @@ private:
 			reuse.body = it->second.value.str;
 		if((it = reuse.props.find(PropTag::MESSAGECLASS)) != reuse.props.end())
 			reuse.messageclass = it->second.value.str;
+		if((it = reuse.props.find(PropTag::COMPANYNAME)) != reuse.props.end())
+			strjoin(reuse.other, "\n", it->second.value.str);
+		if((it = reuse.props.find(PropTag::TITLE)) != reuse.props.end())
+			strjoin(reuse.other, "\n", it->second.value.str);
 		for(const auto& entry : namedProptags)
 		{
 			if((it = reuse.props.find(entry)) == reuse.props.end())
@@ -776,7 +781,7 @@ private:
 				continue;
 			reuse.other += reuse.other.empty()? "" : "\n";
 			if(tp.type == PropvalType::STRING)
-				reuse.other +=  tp.value.str;
+				reuse.other += tp.value.str;
 			else
 				reuse.other += strjoin(tp.value.astr.begin(), tp.value.astr.end(), "\n", [](char** it){return *it;});
 		}
