@@ -32,6 +32,7 @@
 #include <exmdbpp/util.h>
 #include <libHX/proc.h>
 #include <libHX/string.h>
+#include <libxml/HTMLparser.h>
 #include <sys/stat.h>
 
 using namespace std::string_literals;
@@ -84,6 +85,7 @@ class DB_RESULT { /* from gromox/database_mysql.hpp */
 struct our_del {
 	inline void operator()(FILE *x) const { fclose(x); }
 	inline void operator()(MYSQL *x) const { mysql_close(x); }
+	inline void operator()(xmlDoc *d) const { xmlFreeDoc(d); }
 };
 
 struct user_row {
@@ -251,6 +253,43 @@ inline void addTagStrLine(std::string& dest, const ExmdbQueries::PropvalList& pl
 	if(!dest.empty())
 		dest += "\n";
 	dest += it->value.str;
+}
+
+/**
+ * @brief      Extract text from HTML document
+ *
+ * @param      body    String to append text to
+ * @param      node    Parent XML node to traverse
+ */
+static void extractHtmlText(std::string &body, const xmlNode *node)
+{
+	if(!node)
+		return;
+	for(auto child = node->children; child; child = child->next) {
+		if(child->type == XML_TEXT_NODE) {
+			body += ' ';
+			body += reinterpret_cast<const char*>(child->content);
+		}
+		extractHtmlText(body, child);
+	}
+}
+
+/**
+ * @brief      Append text (without tags) from HTML document
+ *
+ * @param      body    String to append to
+ * @param      data    HTML document data
+ * @param      len     HTML document length
+ */
+static void appendSanitizedHtml(std::string& body, const void* data, uint32_t len)
+{
+	std::unique_ptr<xmlDoc, our_del> doc(htmlReadMemory(static_cast<const char*>(data), len, nullptr, "utf-8",
+	                                                    HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING | HTML_PARSE_NONET));
+	if(!doc) {
+		msg<WARNING>("failed to parse HTML data");
+		return;
+	}
+	extractHtmlText(body, xmlDocGetRootElement(doc.get()));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -538,12 +577,13 @@ private:
 	    PropvalType::STRING_ARRAY
 	}; ///< Types of the named tags
 
-	static constexpr std::array<uint32_t, 12> msgtags1 = {
+	static constexpr std::array<uint32_t, 13> msgtags1 = {
 	     PropTag::ENTRYID, PropTag::SENTREPRESENTINGNAME, PropTag::SENTREPRESENTINGSMTPADDRESS,
 	     PropTag::SUBJECT, PropTag::BODY, PropTag::SENDERNAME,
 	     PropTag::SENDERSMTPADDRESS, PropTag::INTERNETCODEPAGE,
 	     PropTag::CHANGENUMBER, PropTag::MESSAGECLASS,
-	     PropTag::MESSAGEDELIVERYTIME, PropTag::LASTMODIFICATIONTIME
+	     PropTag::MESSAGEDELIVERYTIME, PropTag::LASTMODIFICATIONTIME,
+	     PropTag::HTML,
 	}; ///< Part 1 of message tags to query
 
 	static constexpr std::array<uint32_t, 21> msgtags2 = {
@@ -766,6 +806,8 @@ private:
 			strjoin(reuse.sender, "\n", it->second.value.str);
 		if((it = reuse.props.find(PropTag::BODY)) != reuse.props.end())
 			reuse.body = it->second.value.str;
+		if((it = reuse.props.find(PropTag::HTML)) != reuse.props.end())
+			appendSanitizedHtml(reuse.body, it->second.binaryData(), it->second.binaryLength());
 		if((it = reuse.props.find(PropTag::MESSAGECLASS)) != reuse.props.end())
 			reuse.messageclass = it->second.value.str;
 		if((it = reuse.props.find(PropTag::COMPANYNAME)) != reuse.props.end())
