@@ -385,7 +385,7 @@ public:
 		                 " folder_id UNINDEXED,"
 		                 " message_class UNINDEXED,"
 		                 " date UNINDEXED, "
-		                 " tokenize=unicode61)");
+		                 " tokenize=trigram)");
 		if(res != SQLITE_OK)
 			throw std::runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
 	}
