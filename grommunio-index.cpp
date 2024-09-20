@@ -236,9 +236,9 @@ inline bool tagFinder(const structures::TaggedPropval& tp)
  * @brief      Adds a tag value .
  *
  * @param      dest  The destination
- * @param      pl    { parameter_description }
+ * @param      pl    Property list to search
  *
- * @tparam     tag   { description }
+ * @tparam     tag   Tag to search for
  */
 template<uint32_t tag>
 inline void addTagStrLine(std::string& dest, const ExmdbQueries::PropvalList& pl)
