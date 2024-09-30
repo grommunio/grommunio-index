@@ -523,7 +523,7 @@ private:
 		void reset()
 		{
 			rcpts.clear(); attchs.clear(); sending.clear(); sender.clear(); body.clear();
-			props.clear();
+			props.clear(); other.clear();
 		}
 	} reuse; ///< Objects that can be reused to save on memory allocations
 
