@@ -577,8 +577,9 @@ private:
 	    PropvalType::STRING_ARRAY
 	}; ///< Types of the named tags
 
-	static constexpr std::array<uint32_t, 13> msgtags1 = {
+	static constexpr std::array<uint32_t, 15> msgtags1 = {
 	     PropTag::ENTRYID, PropTag::SENTREPRESENTINGNAME, PropTag::SENTREPRESENTINGSMTPADDRESS,
+	     PropTag::SENTREPRESENTINGEMAILADDRESS, PropTag::SENDEREMAILADDRESS,
 	     PropTag::SUBJECT, PropTag::BODY, PropTag::SENDERNAME,
 	     PropTag::SENDERSMTPADDRESS, PropTag::INTERNETCODEPAGE,
 	     PropTag::CHANGENUMBER, PropTag::MESSAGECLASS,
@@ -800,9 +801,13 @@ private:
 			reuse.sending += it->second.value.str;
 		if((it = reuse.props.find(PropTag::SENTREPRESENTINGSMTPADDRESS)) != reuse.props.end())
 			strjoin(reuse.sending, "\n", it->second.value.str);
+		if((it = reuse.props.find(PropTag::SENTREPRESENTINGEMAILADDRESS)) != reuse.props.end())
+			strjoin(reuse.sending, "\n", it->second.value.str);
 		if((it = reuse.props.find(PropTag::SENDERNAME)) != reuse.props.end())
 			reuse.sender += it->second.value.str;
 		if((it = reuse.props.find(PropTag::SENDERSMTPADDRESS)) != reuse.props.end())
+			strjoin(reuse.sender, "\n", it->second.value.str);
+		if((it = reuse.props.find(PropTag::SENDEREMAILADDRESS)) != reuse.props.end())
 			strjoin(reuse.sender, "\n", it->second.value.str);
 		if((it = reuse.props.find(PropTag::BODY)) != reuse.props.end())
 			reuse.body = it->second.value.str;
