@@ -587,7 +587,7 @@ private:
 	     PropTag::HTML,
 	}; ///< Part 1 of message tags to query
 
-	static constexpr std::array<uint32_t, 21> msgtags2 = {
+	static constexpr std::array<uint32_t, 33> msgtags2 = {
 	    PropTag::DISPLAYNAME, PropTag::DISPLAYNAMEPREFIX, PropTag::HOMETELEPHONENUMBER,
 	    PropTag::MOBILETELEPHONENUMBER, PropTag::BUSINESSTELEPHONENUMBER,
 	    PropTag::BUSINESSFAXNUMBER, PropTag::ASSISTANTTELEPHONENUMBER,
@@ -597,6 +597,10 @@ private:
 	    PropTag::PAGERTELEPHONENUMBER, PropTag::PRIMARYFAXNUMBER,
 	    PropTag::PRIMARYTELEPHONENUMBER, PropTag::RADIOTELEPHONENUMBER, PropTag::TELEXNUMBER,
 	    PropTag::COMPANYNAME, PropTag::TITLE,
+	    PropTag::HOMEADDRESSCITY, PropTag::HOMEADDRESSCOUNTRY, PropTag::HOMEADDRESSPOSTALCODE,
+	    PropTag::HOMEADDRESSPOSTOFFICEBOX, PropTag::HOMEADDRESSSTATEORPROVINCE, PropTag::HOMEADDRESSSTREET,
+	    PropTag::OTHERADDRESSCITY, PropTag::OTHERADDRESSCOUNTRY, PropTag::OTHERADDRESSPOSTALCODE,
+	    PropTag::OTHERADDRESSPOSTOFFICEBOX, PropTag::OTHERADDRESSSTATEORPROVINCE, PropTag::OTHERADDRESSSTREET
 	}; ///< Part 2 of message tags to query
 
 	fs::path usrpath; ///< Path to the user's home directory
@@ -815,10 +819,11 @@ private:
 			appendSanitizedHtml(reuse.body, it->second.binaryData(), it->second.binaryLength());
 		if((it = reuse.props.find(PropTag::MESSAGECLASS)) != reuse.props.end())
 			reuse.messageclass = it->second.value.str;
-		if((it = reuse.props.find(PropTag::COMPANYNAME)) != reuse.props.end())
-			strjoin(reuse.other, "\n", it->second.value.str);
-		if((it = reuse.props.find(PropTag::TITLE)) != reuse.props.end())
-			strjoin(reuse.other, "\n", it->second.value.str);
+		for(const auto& tag : msgtags2)
+		{
+			if((it = reuse.props.find(tag)) != reuse.props.end())
+				strjoin(reuse.other, reuse.other.empty()? "" : "\n", it->second.value.str);
+		}
 		for(const auto& entry : namedProptags)
 		{
 			if((it = reuse.props.find(entry)) == reuse.props.end())
