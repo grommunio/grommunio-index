@@ -846,8 +846,8 @@ private:
 		if((it = reuse.props.find(PropTag::CHANGENUMBER)) != reuse.props.end())
 			stmt.call(sqlite3_bind_int64, stmt.indexOf(":change_num"), util::gcToValue(it->second.value.u64));
 		stmt.bindText(":message_class", reuse.messageclass);
-		if((it = reuse.props.find(PropTag::LASTMODIFICATIONTIME)) != reuse.props.end() ||
-		   (it = reuse.props.find(PropTag::MESSAGEDELIVERYTIME)) != reuse.props.end())
+		if((it = reuse.props.find(PropTag::MESSAGEDELIVERYTIME)) != reuse.props.end() ||
+		   (it = reuse.props.find(PropTag::LASTMODIFICATIONTIME)) != reuse.props.end())
 			stmt.call(sqlite3_bind_int64, stmt.indexOf(":date"), util::nxTime(it->second.value.u64));
 		stmt.exec();
 	}
