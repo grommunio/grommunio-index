@@ -101,7 +101,7 @@ enum LEVEL {FATAL, ERROR, WARNING, STATUS, INFO, DEBUG, TRACE, LOGLEVELS}; ///< 
 static const char* levelname[] = {"FATAL", "ERROR", "WARNING", "STATUS", "INFO", "DEBUG", "TRACE"}; ///< Log level names
 
 static int verbosity = STATUS; ///< Effective log level
-
+static const uint8_t MSGFLAG_READ = 0x1; /* mfRead */
 
 /**
  * @brief      Logger struct
@@ -376,7 +376,7 @@ public:
 		                 " commit_max INTEGER NOT NULL,"
 		                 " max_cn INTEGER NOT NULL);\n"
 		                 "CREATE VIRTUAL TABLE IF NOT EXISTS messages USING fts5 ("
-		                 " sender, sending, recipients, "
+		                 " sender, sending, recipients,"
 		                 " subject, content, attachments,"
 		                 " others, message_id,"
 		                 " attach_indexed UNINDEXED,"
@@ -384,7 +384,8 @@ public:
 		                 " change_num UNINDEXED,"
 		                 " folder_id UNINDEXED,"
 		                 " message_class UNINDEXED,"
-		                 " date UNINDEXED, "
+		                 " date UNINDEXED,"
+		                 " readflag UNINDEXED,"
 		                 " tokenize=trigram)");
 		if(res != SQLITE_OK)
 			throw std::runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
@@ -577,14 +578,14 @@ private:
 	    PropvalType::STRING_ARRAY
 	}; ///< Types of the named tags
 
-	static constexpr std::array<uint32_t, 15> msgtags1 = {
+	static constexpr std::array<uint32_t, 16> msgtags1 = {
 	     PropTag::ENTRYID, PropTag::SENTREPRESENTINGNAME, PropTag::SENTREPRESENTINGSMTPADDRESS,
 	     PropTag::SENTREPRESENTINGEMAILADDRESS, PropTag::SENDEREMAILADDRESS,
 	     PropTag::SUBJECT, PropTag::BODY, PropTag::SENDERNAME,
 	     PropTag::SENDERSMTPADDRESS, PropTag::INTERNETCODEPAGE,
 	     PropTag::CHANGENUMBER, PropTag::MESSAGECLASS,
 	     PropTag::MESSAGEDELIVERYTIME, PropTag::LASTMODIFICATIONTIME,
-	     PropTag::HTML,
+	     PropTag::HTML, PropTag::MESSAGEFLAGS
 	}; ///< Part 1 of message tags to query
 
 	static constexpr std::array<uint32_t, 33> msgtags2 = {
@@ -756,9 +757,9 @@ private:
 		copy(msgtags2.begin(), msgtags2.end(), tagend);
 		SQLiteStmt stmt(db, "INSERT INTO messages (sender, sending, recipients, subject, "
 		                    "content, attachments, others, message_id, attach_indexed, entryid, change_num, folder_id,"
-		                    " message_class, date) VALUES (:sender, :sending, :recipients, :subject, :content, "
+		                    " message_class, date, readflag) VALUES (:sender, :sending, :recipients, :subject, :content, "
 		                    ":attachments, :others, :message_id, :attach_indexed, :entryid, :change_num, :folder_id, "
-		                    ":message_class, :date)");
+		                    ":message_class, :date, :readflag)");
 		sqliteExec("BEGIN");
 		for(const Message& message : messages)
 		{
@@ -854,6 +855,10 @@ private:
 		if((it = reuse.props.find(PropTag::MESSAGEDELIVERYTIME)) != reuse.props.end() ||
 		   (it = reuse.props.find(PropTag::LASTMODIFICATIONTIME)) != reuse.props.end())
 			stmt.call(sqlite3_bind_int64, stmt.indexOf(":date"), util::nxTime(it->second.value.u64));
+		if((it = reuse.props.find(PropTag::MESSAGEFLAGS)) != reuse.props.end())
+			stmt.call(sqlite3_bind_int, stmt.indexOf(":readflag"), int(it->second.value.u8 & MSGFLAG_READ));
+		else
+			stmt.call(sqlite3_bind_int, stmt.indexOf(":readflag"), 1);
 		stmt.exec();
 	}
 
