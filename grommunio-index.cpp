@@ -24,6 +24,7 @@
 #include <string_view>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <exmdbpp/constants.h>
@@ -290,6 +291,31 @@ static void appendSanitizedHtml(std::string& body, const void* data, uint32_t le
 		return;
 	}
 	extractHtmlText(body, xmlDocGetRootElement(doc.get()));
+}
+
+/**
+ * @brief      Remove redundant whitespaces and duplicate words
+ *
+ * @param      body    String to sanitize
+ */
+static void sanitizeBody(std::string& body)
+{
+	std::unordered_set<std::string_view> tokens;
+	auto rcursor = body.begin(), wcursor = body.begin();
+	while(rcursor != body.end()) {
+		while(rcursor != body.end() && std::isspace(*rcursor))
+			++rcursor;
+		if(rcursor == body.end())
+			break;
+		auto tokenStart = rcursor;
+		while(rcursor != body.end() && !std::isspace(*rcursor++));
+		std::string_view token(&*tokenStart, rcursor-tokenStart);
+		if(token.size() < 3 || tokens.find(token) != tokens.end())
+			continue;
+		tokens.emplace(token);
+		wcursor = std::copy(tokenStart, rcursor, wcursor);
+	}
+	body.erase(wcursor, body.end());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -838,6 +864,7 @@ private:
 			else
 				reuse.other += strjoin(tp.value.astr.begin(), tp.value.astr.end(), "\n", [](char** it){return *it;});
 		}
+		sanitizeBody(reuse.body);
 		stmt.bindText(":sender", reuse.sender);
 		stmt.bindText(":sending", reuse.sending);
 		stmt.bindText(":recipients", reuse.rcpts);
