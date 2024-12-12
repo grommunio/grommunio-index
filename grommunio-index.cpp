@@ -787,11 +787,17 @@ private:
 		                    ":attachments, :others, :message_id, :attach_indexed, :entryid, :change_num, :folder_id, "
 		                    ":message_class, :date, :readflag)");
 		sqliteExec("BEGIN");
+		auto last = std::chrono::high_resolution_clock::now();
 		for(const Message& message : messages)
 		{
 			try {insertMessage(stmt, message, msgtags);}
 			catch (const std::exception& e)
 			{msg<ERROR>("Failed to insert message ", message.fid, "/", util::gcToValue(message.mid), ": ", e.what());}
+			auto now = std::chrono::high_resolution_clock::now();
+			if(now-last > std::chrono::seconds(30)) {
+				msg<DEBUG>("Indexed ", &message-&messages[0], "/", messages.size(), " messages");
+				last = now;
+			}
 		}
 		sqliteExec("COMMIT");
 	}
