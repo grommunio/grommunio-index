@@ -401,18 +401,21 @@ public:
 		                 " folder_id INTEGER PRIMARY KEY,"
 		                 " commit_max INTEGER NOT NULL,"
 		                 " max_cn INTEGER NOT NULL);\n"
+		                 "CREATE TABLE IF NOT EXISTS msg_content ("
+		                 " message_id INTEGER PRIMARY KEY,"
+		                 " entryid BLOB,"
+		                 " folder_id INTEGER,"
+		                 " message_class TEXT,"
+		                 " date INTEGER,"
+		                 " readflag INTEGER,"
+		                 " attach_indexed INTEGER);\n"
 		                 "CREATE VIRTUAL TABLE IF NOT EXISTS messages USING fts5 ("
-		                 " sender, sending, recipients,"
-		                 " subject, content, attachments,"
-		                 " others, message_id,"
-		                 " attach_indexed UNINDEXED,"
-		                 " entryid UNINDEXED,"
-		                 " change_num UNINDEXED,"
-		                 " folder_id UNINDEXED,"
-		                 " message_class UNINDEXED,"
-		                 " date UNINDEXED,"
-		                 " readflag UNINDEXED,"
-		                 " tokenize=trigram)");
+		                 " sender, sending, recipients, subject, content, attachments, others,"
+		                 " tokenize ='unicode61',"
+		                 " prefix='3 5 7',"
+		                 " content='',"
+		                 " contentless_delete=1);\n"
+		                 );
 		if(res != SQLITE_OK)
 			throw std::runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
 	}
@@ -604,12 +607,12 @@ private:
 	    PropvalType::STRING_ARRAY
 	}; ///< Types of the named tags
 
-	static constexpr std::array<uint32_t, 16> msgtags1 = {
+	static constexpr std::array<uint32_t, 15> msgtags1 = {
 	     PropTag::ENTRYID, PropTag::SENTREPRESENTINGNAME, PropTag::SENTREPRESENTINGSMTPADDRESS,
 	     PropTag::SENTREPRESENTINGEMAILADDRESS, PropTag::SENDEREMAILADDRESS,
 	     PropTag::SUBJECT, PropTag::BODY, PropTag::SENDERNAME,
 	     PropTag::SENDERSMTPADDRESS, PropTag::INTERNETCODEPAGE,
-	     PropTag::CHANGENUMBER, PropTag::MESSAGECLASS,
+	     PropTag::MESSAGECLASS,
 	     PropTag::MESSAGEDELIVERYTIME, PropTag::LASTMODIFICATIONTIME,
 	     PropTag::HTML, PropTag::MESSAGEFLAGS
 	}; ///< Part 1 of message tags to query
@@ -753,13 +756,17 @@ private:
 		msg<DEBUG>("Removing ", messages.size(), " modified messages");
 		if(!update)
 			return;
-		SQLiteStmt stmt(db, "DELETE FROM messages WHERE message_id=?");
+		SQLiteStmt stmt_del(db, "DELETE FROM msg_content WHERE message_id=?");
+		SQLiteStmt stmt_idx(db, "DELETE FROM messages WHERE message_id=?");
 		sqliteExec("BEGIN");
 		for(const auto& message : messages)
 		{
-			stmt.call(sqlite3_reset);
-			stmt.call(sqlite3_bind_int64, 1, int64_t(message.mid));
-			stmt.exec();
+			stmt_del.call(sqlite3_reset);
+			stmt_del.call(sqlite3_bind_int64, 1, int64_t(message.mid));
+			stmt_del.exec();
+			stmt_idx.call(sqlite3_reset);
+			stmt_idx.call(sqlite3_bind_int64, 1, int64_t(message.mid));
+			stmt_idx.exec();
 		}
 		sqliteExec("COMMIT");
 	}
@@ -781,17 +788,20 @@ private:
 		auto tagend = copy(namedProptags.begin(), namedProptags.end(), msgtags.begin());
 		tagend = copy(msgtags1.begin(), msgtags1.end(), tagend);
 		copy(msgtags2.begin(), msgtags2.end(), tagend);
-		SQLiteStmt stmt(db, "INSERT INTO messages (sender, sending, recipients, subject, "
-		                    "content, attachments, others, message_id, attach_indexed, entryid, change_num, folder_id,"
-		                    " message_class, date, readflag) VALUES (:sender, :sending, :recipients, :subject, :content, "
-		                    ":attachments, :others, :message_id, :attach_indexed, :entryid, :change_num, :folder_id, "
-		                    ":message_class, :date, :readflag)");
+		SQLiteStmt stmt_ins(db, "INSERT INTO msg_content "
+		                    " (message_id, entryid, folder_id, message_class, date, readflag, attach_indexed) "
+		                    " VALUES (:message_id, :entryid, :folder_id, :message_class, :date, :readflag, :attach_indexed)");
+		SQLiteStmt stmt_idx(db, "INSERT INTO messages "
+		                        "(rowid, sender, sending, recipients, subject, content, attachments, others) "
+		                        "VALUES (:rowid, :sender, :sending, :recipients, :subject, :content, :attachments, :others)");
 		sqliteExec("BEGIN");
 		auto last = std::chrono::high_resolution_clock::now();
 		for(const Message& message : messages)
 		{
-			try {insertMessage(stmt, message, msgtags);}
-			catch (const std::exception& e)
+			try {
+				insertMessage(stmt_ins, stmt_idx, message, msgtags);
+
+			} catch (const std::exception& e)
 			{msg<ERROR>("Failed to insert message ", message.fid, "/", util::gcToValue(message.mid), ": ", e.what());}
 			auto now = std::chrono::high_resolution_clock::now();
 			if(now-last > std::chrono::seconds(30)) {
@@ -805,18 +815,18 @@ private:
 	/**
 	 * @brief      Insert a new message into the index
 	 *
-	 * @param      stmt     Prepared insert statement
+	 * @param      stmt_ins     Prepared insert statement
 	 * @param      message  Message to insert
 	 * @param      msgtags  List of tag IDs to query
 	 */
-	void insertMessage(SQLiteStmt& stmt, const Message& message, const std::vector<uint32_t>& msgtags)
+	void insertMessage(SQLiteStmt& stmt_ins, SQLiteStmt& stmt_idx, const Message& message, const std::vector<uint32_t>& msgtags)
 	{
 		using namespace constants;
 		using namespace requests;
 		static const uint32_t attchProps[] = {PropTag::ATTACHLONGFILENAME};
 		msg<TRACE>("Inserting message ", message.fid, "/", util::gcToValue(message.mid));
 		reuse.reset();
-		stmt.call(sqlite3_reset);
+		stmt_ins.call(sqlite3_reset);
 		uint32_t instance = client.send<LoadMessageInstanceRequest>(usrpath, "", 65001, false, 0, message.mid).instanceId;
 		auto rcpts = client.send<GetMessageInstanceRecipientsRequest>(usrpath, instance, 0, std::numeric_limits<uint16_t>::max());
 		auto attchs = client.send<QueryMessageInstanceAttachmentsTableRequest>(usrpath, instance, attchProps, 0, 0);
@@ -871,28 +881,31 @@ private:
 				reuse.other += strjoin(tp.value.astr.begin(), tp.value.astr.end(), "\n", [](char** it){return *it;});
 		}
 		sanitizeBody(reuse.body);
-		stmt.bindText(":sender", reuse.sender);
-		stmt.bindText(":sending", reuse.sending);
-		stmt.bindText(":recipients", reuse.rcpts);
-		stmt.bindText(":subject", (it = reuse.props.find(PropTag::SUBJECT)) != reuse.props.end()? it->second.value.str : "");
-		stmt.bindText(":content", reuse.body);
-		stmt.bindText(":attachments", reuse.attchs);
-		stmt.bindText(":others", reuse.other);
-		stmt.call(sqlite3_bind_int64, stmt.indexOf(":message_id"), util::gcToValue(message.mid));
-		stmt.call(sqlite3_bind_int,	stmt.indexOf(":attach_indexed"), int(reuse.attchs.length() > 0));
-		stmt.call(sqlite3_bind_blob64, stmt.indexOf(":entryid"), message.entryid.binaryData(), message.entryid.binaryLength(), nullptr);
-		stmt.call(sqlite3_bind_int64, stmt.indexOf(":folder_id"), message.fid);
-		if((it = reuse.props.find(PropTag::CHANGENUMBER)) != reuse.props.end())
-			stmt.call(sqlite3_bind_int64, stmt.indexOf(":change_num"), util::gcToValue(it->second.value.u64));
-		stmt.bindText(":message_class", reuse.messageclass);
+
+		stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":message_id"), util::gcToValue(message.mid));
+		stmt_ins.call(sqlite3_bind_blob64, stmt_ins.indexOf(":entryid"), message.entryid.binaryData(), message.entryid.binaryLength(), nullptr);
+		stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":folder_id"), message.fid);
+		stmt_ins.bindText(":message_class", reuse.messageclass);
 		if((it = reuse.props.find(PropTag::MESSAGEDELIVERYTIME)) != reuse.props.end() ||
-		   (it = reuse.props.find(PropTag::LASTMODIFICATIONTIME)) != reuse.props.end())
-			stmt.call(sqlite3_bind_int64, stmt.indexOf(":date"), util::nxTime(it->second.value.u64));
+		    (it = reuse.props.find(PropTag::LASTMODIFICATIONTIME)) != reuse.props.end())
+			stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":date"), util::nxTime(it->second.value.u64));
 		if((it = reuse.props.find(PropTag::MESSAGEFLAGS)) != reuse.props.end())
-			stmt.call(sqlite3_bind_int, stmt.indexOf(":readflag"), int(it->second.value.u8 & MSGFLAG_READ));
+			stmt_ins.call(sqlite3_bind_int, stmt_ins.indexOf(":readflag"), int(it->second.value.u8 & MSGFLAG_READ));
 		else
-			stmt.call(sqlite3_bind_int, stmt.indexOf(":readflag"), 1);
-		stmt.exec();
+			stmt_ins.call(sqlite3_bind_int, stmt_ins.indexOf(":readflag"), 1);
+		stmt_ins.call(sqlite3_bind_int,	stmt_ins.indexOf(":attach_indexed"), int(reuse.attchs.length() > 0));
+		stmt_ins.exec();
+
+		stmt_idx.call(sqlite3_reset);
+		stmt_idx.call(sqlite3_bind_int64, stmt_idx.indexOf(":rowid"), util::gcToValue(message.mid));
+		stmt_idx.bindText(":sender", reuse.sender);
+		stmt_idx.bindText(":sending", reuse.sending);
+		stmt_idx.bindText(":recipients", reuse.rcpts);
+		stmt_idx.bindText(":subject", (it = reuse.props.find(PropTag::SUBJECT)) != reuse.props.end()? it->second.value.str : "");
+		stmt_idx.bindText(":content", reuse.body);
+		stmt_idx.bindText(":attachments", reuse.attchs);
+		stmt_idx.bindText(":others", reuse.other);
+		stmt_idx.exec();
 	}
 
 	/**
