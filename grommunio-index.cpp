@@ -823,7 +823,7 @@ private:
 	{
 		using namespace constants;
 		using namespace requests;
-		static const uint32_t attchProps[] = {PropTag::ATTACHLONGFILENAME};
+		static const uint32_t attchProps[] = {PropTag::ATTACHLONGFILENAME, PropTag::ATTACHFLAGS};
 		msg<TRACE>("Inserting message ", message.fid, "/", util::gcToValue(message.mid));
 		reuse.reset();
 		stmt_ins.call(sqlite3_reset);
@@ -839,7 +839,8 @@ private:
 			addTagStrLine<PropTag::SMTPADDRESS>(reuse.rcpts, pl);
 		}
 		for(const ExmdbQueries::PropvalList& pl : attchs.entries)
-			if(pl.size() == 1 && pl[0].tag == PropTag::ATTACHLONGFILENAME)
+			if((pl.size() == 1 && pl[0].tag == PropTag::ATTACHLONGFILENAME) ||
+			   (pl.size() == 2 && pl[1].value.u16 != 4 && pl[0].tag == PropTag::ATTACHLONGFILENAME))
 				reuse.attchs += pl[0].value.str;
 
 		mkMapMv(propvals.begin(), propvals.end(), reuse.props, tagMapper);
