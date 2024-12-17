@@ -757,7 +757,7 @@ private:
 		if(!update)
 			return;
 		SQLiteStmt stmt_del(db, "DELETE FROM msg_content WHERE message_id=?");
-		SQLiteStmt stmt_idx(db, "DELETE FROM messages WHERE message_id=?");
+		SQLiteStmt stmt_idx(db, "DELETE FROM messages WHERE rowid=?");
 		sqliteExec("BEGIN");
 		for(const auto& message : messages)
 		{
