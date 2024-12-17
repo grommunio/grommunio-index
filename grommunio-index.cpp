@@ -383,41 +383,14 @@ public:
 				dbpath /= "index.sqlite3";
 		}
 		update = fs::exists(dbpath);
-		if (update)
-			msg<STATUS>("Updating existing index "s + dbpath.c_str());
-		else
-			msg<STATUS>("Creating new index "s + dbpath.c_str());
 		int res = sqlite3_open(dbpath.c_str(), &db);
 		if(res != SQLITE_OK)
 			throw std::runtime_error("Failed to open index database: "s + sqlite3_errmsg(db));
 		chmod(dbpath.c_str(), 0660); /* sqlite3_open ignores umask */
-		if(update && create)
-		{
-			sqliteExec("DROP TABLE IF EXISTS hierarchy;"
-			           "DROP TABLE IF EXISTS messages");
-			update = false;
-		}
-		res = sqliteExec("CREATE TABLE IF NOT EXISTS hierarchy ("
-		                 " folder_id INTEGER PRIMARY KEY,"
-		                 " commit_max INTEGER NOT NULL,"
-		                 " max_cn INTEGER NOT NULL);\n"
-		                 "CREATE TABLE IF NOT EXISTS msg_content ("
-		                 " message_id INTEGER PRIMARY KEY,"
-		                 " entryid BLOB,"
-		                 " folder_id INTEGER,"
-		                 " message_class TEXT,"
-		                 " date INTEGER,"
-		                 " readflag INTEGER,"
-		                 " attach_indexed INTEGER);\n"
-		                 "CREATE VIRTUAL TABLE IF NOT EXISTS messages USING fts5 ("
-		                 " sender, sending, recipients, subject, content, attachments, others,"
-		                 " tokenize ='unicode61',"
-		                 " prefix='3 5 7',"
-		                 " content='',"
-		                 " contentless_delete=1);\n"
-		                 );
-		if(res != SQLITE_OK)
-			throw std::runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
+		if(create || !checkSchemaVersion()) // Schemas are not migrated, just start with a new index
+			recreate(dbpath);
+		else
+			msg<STATUS>("Updating existing index ", dbpath);
 	}
 
 	/**
@@ -595,6 +568,9 @@ private:
 			props.clear(); other.clear();
 		}
 	} reuse; ///< Objects that can be reused to save on memory allocations
+
+
+	static constexpr int64_t SCHEMAVERSION = 1;
 
 	static std::array<structures::PropertyName, 14> namedTags; ///< Array of named tags to query
 	static constexpr std::array<uint16_t, 14> namedTagTypes = {
@@ -944,6 +920,66 @@ private:
 			stmt.exec();
 		}
 		sqliteExec("COMMIT");
+	}
+
+	/**
+	 * @brief      Check whether the database schema matches current schema
+	 *
+	 * @return     false if schema version does not match or could not be determined, true otherwise
+	 */
+	bool checkSchemaVersion() const
+	{
+		try {
+			SQLiteStmt stmt(db, "SELECT value FROM configurations WHERE key='schemaversion'");
+			return sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int64(stmt, 0) == SCHEMAVERSION;
+		} catch(...) {
+			return false;
+		}
+	}
+
+	/**
+	 * @brief      Create new index database, removing any previous content
+	 *
+	 * @throws     std::runtime_error    Schema initialization failed
+	 */
+	void recreate(const fs::path& dbpath)
+	{
+		if(update) { // Clear the database before anything is created
+			msg<STATUS>("Clearing existing index ", dbpath);
+			sqlite3_db_config(db, SQLITE_DBCONFIG_RESET_DATABASE, 1, 0);
+			sqliteExec("VACUUM");
+			sqlite3_db_config(db, SQLITE_DBCONFIG_RESET_DATABASE, 0, 0);
+		}
+		else
+			msg<STATUS>("Creating new index ", dbpath);
+		int res = sqliteExec("CREATE TABLE hierarchy ("
+		                 " folder_id INTEGER PRIMARY KEY,"
+		                 " commit_max INTEGER NOT NULL,"
+		                 " max_cn INTEGER NOT NULL);\n"
+		                 "CREATE TABLE msg_content ("
+		                 " message_id INTEGER PRIMARY KEY,"
+		                 " entryid BLOB,"
+		                 " folder_id INTEGER,"
+		                 " message_class TEXT,"
+		                 " date INTEGER,"
+		                 " readflag INTEGER,"
+		                 " attach_indexed INTEGER);\n"
+		                 "CREATE VIRTUAL TABLE messages USING fts5 ("
+		                 " sender, sending, recipients, subject, content, attachments, others,"
+		                 " tokenize ='unicode61',"
+		                 " prefix='3 5 7',"
+		                 " content='',"
+		                 " contentless_delete=1);\n"
+		                 "CREATE TABLE configurations ("
+		                 " key TEXT PRIMARY KEY,"
+		                 " value);\n"
+		                 );
+		if(res != SQLITE_OK)
+			throw std::runtime_error("Failed to initialize index database: "s + sqlite3_errmsg(db));
+		SQLiteStmt stmt(db, "INSERT INTO configurations (key, value) VALUES ('schemaversion', ?)");
+		stmt.call(sqlite3_bind_int64, 1, SCHEMAVERSION);
+		stmt.exec();
+
 	}
 };
 
