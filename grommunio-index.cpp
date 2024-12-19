@@ -744,18 +744,20 @@ private:
 			auto lctResponse = client.send<LoadContentTableRequest>(usrpath, 0, folderIdGc, "", 0);
 			auto contents = client.send<QueryTableRequest>(usrpath, "", 0, lctResponse.tableId, cTags, 0, lctResponse.rowCount);
 			client.send<UnloadTableRequest>(usrpath, lctResponse.tableId);
+			msg<TRACE>("Analysing messages of folder ", folderId, "(lastCn=", lastCn, ")");
 			for(auto& content : contents.entries)
 			{
 				uint64_t mid = util::gcToValue(getTag(content, PropTag::MID).value.u64);
 				uint64_t cn = util::gcToValue(getTag(content, PropTag::CHANGENUMBER).value.u64);
 				updates.mDel.erase(mid);
+				msg<TRACE>(" Message ", mid, " with cn ", cn, cn <= lastCn? " (discarded)" : " (needs update)");
 				if(cn <= lastCn)
 					continue;
 				maxCn = std::max(maxCn, cn);
 				updates.mUpd.emplace_back(mid, folderId);
 			}
 			msg<TRACE>("Checked folder ", folderId, " with ", contents.entries.size(), " messages. ",
-			           "Total updates now at ", updates.mUpd.size(), ".");
+			           "Total updates now at *", updates.mUpd.size(), "/-", updates.mDel.size(), ".");
 			updates.fUpd.emplace_back(folderId, lctm, maxCn);
 		} catch (const std::out_of_range &e) {
 			msg<ERROR>(e.what());
