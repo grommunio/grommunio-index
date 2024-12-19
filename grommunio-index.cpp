@@ -404,16 +404,17 @@ public:
 	 */
 	void refresh()
 	{
-		auto [messages, hierarchy] = getUpdates();
-		if(messages.size() == 0 && hierarchy.size() == 0)
+		auto updates = getUpdates();
+		if(updates.empty())
 		{
 			msg<STATUS>("Index is up-to-date.");
 			return;
 		}
 		msg<STATUS>("Updating index...");
-		removeMessages(messages);
-		insertMessages(messages);
-		refreshHierarchy(hierarchy);
+		removeMessages(updates.mDel);
+		removeFolders(updates.fDel);
+		insertMessages(updates.mUpd);
+		refreshHierarchy(updates.fUpd);
 		msg<STATUS>("Index updated.");
 	}
 
@@ -556,6 +557,18 @@ private:
 		uint64_t folderId, lctm, maxCn;
 	};
 
+	/**
+	 * @brief      Helper struct bundling index update information
+	 */
+	struct DiffSet {
+		std::unordered_set<uint64_t> fDel; ///< IDs of folders that have been deleted
+		std::vector<Hierarchy> fUpd; ///< Information of updated folders
+		std::unordered_set<uint64_t> mDel; ///< IDs of deleted messages
+		std::vector<Message> mUpd; ///< Information of updated messages
+
+		bool empty() const {return fDel.empty() && fUpd.empty() && mDel.empty() && mUpd.empty();}
+	};
+
 	struct
 	{
 		std::string attchs, body, other, rcpts, sender, sending, subject, messageclass;
@@ -569,7 +582,7 @@ private:
 	} reuse; ///< Objects that can be reused to save on memory allocations
 
 
-	static constexpr int64_t SCHEMAVERSION = 1;
+	static constexpr int64_t SCHEMAVERSION = 2;
 
 	static std::array<structures::PropertyName, 14> namedTags; ///< Array of named tags to query
 	static constexpr std::array<uint16_t, 14> namedTagTypes = {
@@ -655,11 +668,37 @@ private:
 	}
 
 	/**
+	 * @brief      Get a list of all known folder IDs
+	 *
+	 * @param      fids  Set to store folder IDs into
+	 */
+	void getFids(std::unordered_set<uint64_t>& fids) const
+	{
+		SQLiteStmt stmt(db, "SELECT folder_id FROM hierarchy");
+		while(sqlite3_step(stmt) == SQLITE_ROW)
+			fids.emplace(sqlite3_column_int64(stmt, 0));
+	}
+
+	/**
+	 * @brief      Get a list of all known message IDs in a folder
+	 *
+	 * @param      mids      Set to store message IDs into
+	 * @param      folderId  Folder ID to query
+	 */
+	void getMids(std::unordered_set<uint64_t>& mids, uint64_t folderId) const
+	{
+		SQLiteStmt stmt(db, "SELECT message_id FROM msg_content WHERE folder_id=?");
+		stmt.call(sqlite3_bind_int64, 1, folderId);
+		while(sqlite3_step(stmt) == SQLITE_ROW)
+			mids.emplace(sqlite3_column_int64(stmt, 0));
+	}
+
+	/**
 	 * @brief      Check folders and messages for updates
 	 *
-	 * @return     Pair of messages and hierarchy entries to update
+	 * @return     DiffSet containing updates
 	 */
-	std::pair<std::vector<Message>, std::vector<Hierarchy>> getUpdates()
+	DiffSet getUpdates()
 	{
 		using namespace exmdbpp::constants;
 		using namespace exmdbpp::requests;
@@ -673,16 +712,19 @@ private:
 		auto lhtResponse = client.send<LoadHierarchyTableRequest>(usrpath, ipmsubtree, "", TableFlags::DEPTH);
 		auto qtResponse = client.send<QueryTableRequest>(usrpath, "", 0, lhtResponse.tableId, fTags, 0, lhtResponse.rowCount);
 		client.send<UnloadTableRequest>(usrpath, lhtResponse.tableId);
-		msg<DEBUG>("Loaded ", qtResponse.entries.size(), " folders");
 		SQLiteStmt stmt(db, "SELECT commit_max, max_cn FROM hierarchy WHERE folder_id=?");
-		std::vector<Message> messages;
-		std::vector<Hierarchy> hierarchy;
+
+		DiffSet updates;
+		getFids(updates.fDel);
+		msg<DEBUG>("Loaded ", qtResponse.entries.size(), " folders (", updates.fDel.size(), " known)");
+
 		for(auto& entry : qtResponse.entries) try
 		{
 			uint64_t lastCn = 0, maxCn = 0;
 			uint64_t folderIdGc = getTag(entry, PropTag::FOLDERID).value.u64;
 			uint64_t folderId = util::gcToValue(folderIdGc);
 			uint64_t lctm = util::nxTime(getTag(entry, PropTag::LOCALCOMMITTIMEMAX).value.u64);
+			updates.fDel.erase(folderId);
 			if(update)
 			{
 				stmt.call(sqlite3_reset);
@@ -698,27 +740,54 @@ private:
 					lastCn = maxCn = sqlite3_column_int64(stmt, 1);
 				}
 			}
+			getMids(updates.mDel, folderId);
 			auto lctResponse = client.send<LoadContentTableRequest>(usrpath, 0, folderIdGc, "", 0);
 			auto contents = client.send<QueryTableRequest>(usrpath, "", 0, lctResponse.tableId, cTags, 0, lctResponse.rowCount);
 			client.send<UnloadTableRequest>(usrpath, lctResponse.tableId);
 			for(auto& content : contents.entries)
 			{
+				uint64_t mid = util::gcToValue(getTag(content, PropTag::MID).value.u64);
 				uint64_t cn = util::gcToValue(getTag(content, PropTag::CHANGENUMBER).value.u64);
+				updates.mDel.erase(mid);
 				if(cn <= lastCn)
 					continue;
 				maxCn = std::max(maxCn, cn);
-				messages.emplace_back(getTag(content, PropTag::MID).value.u64, folderId);
+				updates.mUpd.emplace_back(mid, folderId);
 			}
 			msg<TRACE>("Checked folder ", folderId, " with ", contents.entries.size(), " messages. ",
-			           "Total updates now at ", messages.size(), ".");
-			hierarchy.emplace_back(folderId, lctm, maxCn);
+			           "Total updates now at ", updates.mUpd.size(), ".");
+			updates.fUpd.emplace_back(folderId, lctm, maxCn);
 		} catch (const std::out_of_range &e) {
 			msg<ERROR>(e.what());
 			throw EXIT_FAILURE;
 		}
-		msg<INFO>("Need to update ", messages.size(), " message", messages.size() == 1? "": "s",
-		           " and ", hierarchy.size(), " hierarchy entr", hierarchy.size() == 1? "y" : "ies", '.');
-		return {messages, hierarchy};
+		msg<INFO>("Messages: *", updates.mUpd.size(), "/-", updates.mDel.size(),
+		          ", folders: *", updates.fUpd.size(), "/-", updates.fDel.size());
+		return updates;
+	}
+
+	/**
+	 * @brief      Remove folders from index
+	 *
+	 * Deletes all contained messages from both the index and the metadata table
+	 * and removes the hierarchy entry.
+	 *
+	 * @param      folders   List of folder IDs to remove
+	 */
+	void removeFolders(const std::unordered_set<uint64_t> folders)
+	{
+		SQLiteStmt delMsgStmt(db, "DELETE FROM msg_content WHERE folder_id=?");
+		SQLiteStmt delFolderStmt(db, "DELETE FROM hierarchy WHERE folder_id=?");
+		sqliteExec("BEGIN");
+		for(uint64_t fid : folders) {
+			delMsgStmt.call(sqlite3_reset);
+			delMsgStmt.call(sqlite3_bind_int64, 1, fid);
+			sqlite3_step(delMsgStmt);
+			delFolderStmt.call(sqlite3_reset);
+			delFolderStmt.call(sqlite3_bind_int64, 1, fid);
+			sqlite3_step(delFolderStmt);
+		}
+		sqliteExec("COMMIT");
 	}
 
 	/**
@@ -726,7 +795,7 @@ private:
 	 *
 	 * @param      messages  Messages to remove
 	 */
-	void removeMessages(const std::vector<Message>& messages)
+	void removeMessages(const std::unordered_set<uint64_t>& messages)
 	{
 		msg<DEBUG>("Removing ", messages.size(), " modified messages");
 		if(!update)
@@ -734,13 +803,13 @@ private:
 		SQLiteStmt stmt_del(db, "DELETE FROM msg_content WHERE message_id=?");
 		SQLiteStmt stmt_idx(db, "DELETE FROM messages WHERE rowid=?");
 		sqliteExec("BEGIN");
-		for(const auto& message : messages)
+		for(const auto& mid : messages)
 		{
 			stmt_del.call(sqlite3_reset);
-			stmt_del.call(sqlite3_bind_int64, 1, int64_t(message.mid));
+			stmt_del.call(sqlite3_bind_int64, 1, mid);
 			stmt_del.exec();
 			stmt_idx.call(sqlite3_reset);
-			stmt_idx.call(sqlite3_bind_int64, 1, int64_t(message.mid));
+			stmt_idx.call(sqlite3_bind_int64, 1, mid);
 			stmt_idx.exec();
 		}
 		sqliteExec("COMMIT");
@@ -763,10 +832,10 @@ private:
 		auto tagend = copy(namedProptags.begin(), namedProptags.end(), msgtags.begin());
 		tagend = copy(msgtags1.begin(), msgtags1.end(), tagend);
 		copy(msgtags2.begin(), msgtags2.end(), tagend);
-		SQLiteStmt stmt_ins(db, "INSERT INTO msg_content "
+		SQLiteStmt stmt_ins(db, "INSERT OR REPLACE INTO msg_content "
 		                    " (message_id, entryid, folder_id, message_class, date, readflag, attach_indexed) "
 		                    " VALUES (:message_id, :entryid, :folder_id, :message_class, :date, :readflag, :attach_indexed)");
-		SQLiteStmt stmt_idx(db, "INSERT INTO messages "
+		SQLiteStmt stmt_idx(db, "INSERT OR REPLACE INTO messages "
 		                        "(rowid, sender, sending, recipients, subject, content, attachments, others) "
 		                        "VALUES (:rowid, :sender, :sending, :recipients, :subject, :content, :attachments, :others)");
 		sqliteExec("BEGIN");
@@ -775,9 +844,8 @@ private:
 		{
 			try {
 				insertMessage(stmt_ins, stmt_idx, message, msgtags);
-
 			} catch (const std::exception& e)
-			{msg<ERROR>("Failed to insert message ", message.fid, "/", util::gcToValue(message.mid), ": ", e.what());}
+			{msg<ERROR>("Failed to insert message ", message.fid, "/", message.mid, ": ", e.what());}
 			auto now = std::chrono::high_resolution_clock::now();
 			if(now-last > std::chrono::seconds(30)) {
 				msg<DEBUG>("Indexed ", &message-&messages[0], "/", messages.size(), " messages");
@@ -799,10 +867,10 @@ private:
 		using namespace constants;
 		using namespace requests;
 		static const uint32_t attchProps[] = {PropTag::ATTACHLONGFILENAME, PropTag::ATTACHFLAGS};
-		msg<TRACE>("Inserting message ", message.fid, "/", util::gcToValue(message.mid));
+		msg<TRACE>("Inserting message ", message.fid, "/", message.mid);
 		reuse.reset();
 		stmt_ins.call(sqlite3_reset);
-		uint32_t instance = client.send<LoadMessageInstanceRequest>(usrpath, "", 65001, false, 0, message.mid).instanceId;
+		uint32_t instance = client.send<LoadMessageInstanceRequest>(usrpath, "", 65001, false, 0, util::makeEidEx(1, message.mid)).instanceId;
 		auto rcpts = client.send<GetMessageInstanceRecipientsRequest>(usrpath, instance, 0, std::numeric_limits<uint16_t>::max());
 		auto attchs = client.send<QueryMessageInstanceAttachmentsTableRequest>(usrpath, instance, attchProps, 0, 0);
 		auto propvals = client.send<GetInstancePropertiesRequest>(usrpath, 0, instance, msgtags).propvals;
@@ -858,7 +926,7 @@ private:
 		}
 		sanitizeBody(reuse.body);
 
-		stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":message_id"), util::gcToValue(message.mid));
+		stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":message_id"), message.mid);
 		if((it = reuse.props.find(PropTag::ENTRYID)) != reuse.props.end())
 			stmt_ins.call(sqlite3_bind_blob64, stmt_ins.indexOf(":entryid"), it->second.binaryData(),it->second.binaryLength(), nullptr);
 		stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":folder_id"), message.fid);
@@ -874,7 +942,7 @@ private:
 		stmt_ins.exec();
 
 		stmt_idx.call(sqlite3_reset);
-		stmt_idx.call(sqlite3_bind_int64, stmt_idx.indexOf(":rowid"), util::gcToValue(message.mid));
+		stmt_idx.call(sqlite3_bind_int64, stmt_idx.indexOf(":rowid"), message.mid);
 		stmt_idx.bindText(":sender", reuse.sender);
 		stmt_idx.bindText(":sending", reuse.sending);
 		stmt_idx.bindText(":recipients", reuse.rcpts);
@@ -905,13 +973,13 @@ private:
 	/**
 	 * @brief      Refresh the folder hierarchy
 	 *
-	 * @param      hierarchy  List of hierarchy entries
+	 * @param      updated    List of folders
 	 */
-	void refreshHierarchy(const std::vector<Hierarchy>& hierarchy)
+	void refreshHierarchy(const std::vector<Hierarchy>& updated)
 	{
 		SQLiteStmt stmt(db, "REPLACE INTO hierarchy (folder_id, commit_max, max_cn) VALUES (?, ?, ?)");
 		sqliteExec("BEGIN");
-		for(const Hierarchy& h : hierarchy)
+		for(const Hierarchy& h : updated)
 		{
 			stmt.call(sqlite3_reset);
 			stmt.call(sqlite3_bind_int64, 1, h.folderId);
@@ -964,12 +1032,16 @@ private:
 		                 " date INTEGER,"
 		                 " readflag INTEGER,"
 		                 " attach_indexed INTEGER);\n"
+		                 "CREATE INDEX msg_content_idx_folder_id ON msg_content(folder_id);\n"
 		                 "CREATE VIRTUAL TABLE messages USING fts5 ("
 		                 " sender, sending, recipients, subject, content, attachments, others,"
 		                 " tokenize ='unicode61',"
 		                 " prefix='3 5 7',"
 		                 " content='',"
 		                 " contentless_delete=1);\n"
+		                 "CREATE TRIGGER msg_content_deleted AFTER DELETE ON msg_content BEGIN"
+		                 " DELETE FROM messages WHERE rowid=old.message_id;"
+		                 "END;"
 		                 "CREATE TABLE configurations ("
 		                 " key TEXT PRIMARY KEY,"
 		                 " value);\n"
