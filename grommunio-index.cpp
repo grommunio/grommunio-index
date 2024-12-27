@@ -543,9 +543,11 @@ private:
 	 */
 	struct Message
 	{
-		inline Message(uint64_t mid, uint64_t fid) : mid(mid), fid(fid) {}
+		inline Message(uint64_t mid, uint64_t fid, structures::TaggedPropval& entryid) :
+			mid(mid), fid(fid), entryid(std::move(entryid)) {}
 
 		uint64_t mid, fid;
+		structures::TaggedPropval entryid;
 	};
 
 	/**
@@ -704,7 +706,7 @@ private:
 		using namespace exmdbpp::requests;
 		using namespace exmdbpp::structures;
 		static const uint32_t fTags[] = {PropTag::FOLDERID, PropTag::LOCALCOMMITTIMEMAX};
-		static const uint32_t cTags[] = {PropTag::MID, PropTag::CHANGENUMBER};
+		static const uint32_t cTags[] = {PropTag::MID, PropTag::CHANGENUMBER, PropTag::ENTRYID};
 		static const uint64_t ipmsubtree = util::makeEidEx(1, PrivateFid::IPMSUBTREE);
 		static const Restriction genericOnly = Restriction::PROPERTY(Restriction::EQ, 0,
 		                                                             TaggedPropval(PropTag::FOLDERTYPE, uint32_t(1)));
@@ -754,7 +756,7 @@ private:
 				if(cn <= lastCn)
 					continue;
 				maxCn = std::max(maxCn, cn);
-				updates.mUpd.emplace_back(mid, folderId);
+				updates.mUpd.emplace_back(mid, folderId, getTag(content, PropTag::ENTRYID));
 			}
 			msg<TRACE>("Checked folder ", folderId, " with ", contents.entries.size(), " messages. ",
 			           "Total updates now at *", updates.mUpd.size(), "/-", updates.mDel.size(), ".");
@@ -929,8 +931,7 @@ private:
 		sanitizeBody(reuse.body);
 
 		stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":message_id"), message.mid);
-		if((it = reuse.props.find(PropTag::ENTRYID)) != reuse.props.end())
-			stmt_ins.call(sqlite3_bind_blob64, stmt_ins.indexOf(":entryid"), it->second.binaryData(),it->second.binaryLength(), nullptr);
+		stmt_ins.call(sqlite3_bind_blob64, stmt_ins.indexOf(":entryid"), message.entryid.binaryData(), message.entryid.binaryLength(), nullptr);
 		stmt_ins.call(sqlite3_bind_int64, stmt_ins.indexOf(":folder_id"), message.fid);
 		stmt_ins.bindText(":message_class", reuse.messageclass);
 		if((it = reuse.props.find(PropTag::MESSAGEDELIVERYTIME)) != reuse.props.end() ||
