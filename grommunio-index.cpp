@@ -969,7 +969,7 @@ private:
 			throw std::out_of_range("Number of named property IDs does not match expected count");
 		std::vector<uint32_t> propTags(namedTagTypes.size());
 		transform(namedTagTypes.begin(), namedTagTypes.end(), response.propIds.begin(), propTags.begin(),
-		          [](uint16_t id, uint16_t type) {return uint32_t(id) << 16 | type;});
+		          [](uint16_t type, uint16_t id) {return uint32_t(id) << 16 | type;});
 		return propTags;
 	}
 
