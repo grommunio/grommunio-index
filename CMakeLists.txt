@@ -33,7 +33,7 @@ target_link_libraries(grommunio-index
 	${LIBXML2_LIBRARY}
 	)
 
-option(LOGGING_TRACE "Enable TRACE logging level" OFF)
+option(LOGGING_TRACE "Enable TRACE logging level" ON)
 if(LOGGING_TRACE)
     add_compile_definitions(ENABLE_TRACE)
 endif()
