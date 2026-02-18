@@ -9,7 +9,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
 #include <filesystem>
 #include <getopt.h>
 #include <iostream>
@@ -1281,6 +1280,7 @@ int main(int argc, char **argv) try
 	}
 	int bigret = EXIT_SUCCESS;
 	static const std::string index_root = "/var/lib/grommunio-web/sqlite-index";
+	fprintf(stderr, "Running grommunio-index for all user databases\n");
 	for (auto &&u : am_read_users(std::move(cfg))) {
 		auto index_home = index_root + "/" + u.username;
 		if (mkdir(index_home.c_str(), 0777) != 0 && errno != EEXIST) {
@@ -1289,20 +1289,15 @@ int main(int argc, char **argv) try
 			continue;
 		}
 		auto index_file = index_home + "/index.sqlite3";
-		auto now = time(nullptr);
-		char tmbuf[32];
-		strftime(tmbuf, sizeof(tmbuf), "%FT%T", localtime(&now));
-		fprintf(stderr, "[%s] %s %s -e %s -o %s\n", tmbuf, argv[0],
-			u.dir.c_str(), u.host.c_str(), index_file.c_str());
 		userpath.emplace(std::move(u.dir));
 		exmdbHost = std::move(u.host);
 		outpath = std::move(index_file);
 		auto ret = single_mode();
 		if (ret != 0) {
-			fprintf(stderr, "\t... exited with status %d\n", ret);
+			fprintf(stderr, "Indexing user \"%s\" exited with status %d\n",
+				u.username.c_str(), ret);
 			bigret = EXIT_FAILURE;
 		}
-		fprintf(stderr, "\n");
 	}
 	return bigret;
 } catch (int e) {
