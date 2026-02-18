@@ -1289,6 +1289,9 @@ int main(int argc, char **argv) try
 			continue;
 		}
 		auto index_file = index_home + "/index.sqlite3";
+		if (verbosity >= INFO)
+			fprintf(stderr, "Indexing user \"%s\": %s -e %s -o %s\n",
+				u.username.c_str(), argv[0], u.host.c_str(), index_file.c_str());
 		userpath.emplace(std::move(u.dir));
 		exmdbHost = std::move(u.host);
 		outpath = std::move(index_file);
