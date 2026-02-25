@@ -814,16 +814,12 @@ private:
 		if(!update)
 			return;
 		SQLiteStmt stmt_del(db, "DELETE FROM msg_content WHERE message_id=?");
-		SQLiteStmt stmt_idx(db, "DELETE FROM messages WHERE rowid=?");
 		sqliteExec("BEGIN");
 		for(const auto& mid : messages)
 		{
 			stmt_del.call(sqlite3_reset);
 			stmt_del.call(sqlite3_bind_int64, 1, mid);
 			stmt_del.exec();
-			stmt_idx.call(sqlite3_reset);
-			stmt_idx.call(sqlite3_bind_int64, 1, mid);
-			stmt_idx.exec();
 		}
 		sqliteExec("COMMIT");
 	}
