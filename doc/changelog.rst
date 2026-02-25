@@ -1,3 +1,13 @@
+v1.4 (2026-02-25)
+=================
+* Reduce default noise in all-user mode
+* Tune SQLite for fast folder-constrained searches
+* Drop redundant FTS delete in removeMessages
+* Only index relevant folders, not search folders for example (genericOnly)
+* Protect from deeply nested HTML divs (e.g. spam often does this)
+* Skip users with no maildir in all-user mode
+
+
 v1.3 (2025-02-05)
 =================
 * Add trace logging for message updates
