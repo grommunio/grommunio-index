@@ -245,7 +245,7 @@ inline bool tagFinder(const structures::TaggedPropval& tp)
 template<uint32_t tag>
 inline void addTagStrLine(std::string& dest, const ExmdbQueries::PropvalList& pl)
 {
-	static_assert(PropvalType::tagType(tag) != PropvalType::STRING || PropvalType::tagType(tag) != PropvalType::WSTRING,
+	static_assert(PropvalType::tagType(tag) == PropvalType::STRING || PropvalType::tagType(tag) == PropvalType::WSTRING,
 	              "Can only add string tags");
 	auto it = find_if(pl.begin(), pl.end(), tagFinder<tag>);
 	if(it == pl.end())
