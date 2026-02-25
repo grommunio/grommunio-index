@@ -261,16 +261,24 @@ inline void addTagStrLine(std::string& dest, const ExmdbQueries::PropvalList& pl
  * @param      body    String to append text to
  * @param      node    Parent XML node to traverse
  */
-static void extractHtmlText(std::string &body, const xmlNode *node)
+static void extractHtmlText(std::string &body, const xmlNode *root)
 {
-	if(!node)
-		return;
-	for(auto child = node->children; child; child = child->next) {
-		if(child->type == XML_TEXT_NODE) {
+	for(auto node = root; node; ) {
+		if(node->type == XML_TEXT_NODE) {
 			body += ' ';
-			body += reinterpret_cast<const char*>(child->content);
+			body += reinterpret_cast<const char*>(node->content);
 		}
-		extractHtmlText(body, child);
+		if(node->children) {
+			node = node->children;
+		} else {
+			while(node && !node->next) {
+				node = node->parent;
+				if(node == root)
+					return;
+			}
+			if(node)
+				node = node->next;
+		}
 	}
 }
 
