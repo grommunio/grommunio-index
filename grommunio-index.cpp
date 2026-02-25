@@ -299,7 +299,7 @@ static void appendSanitizedHtml(std::string& body, const void* data, uint32_t le
  */
 static void sanitizeBody(std::string& body)
 {
-	std::unordered_set<std::string_view> tokens;
+	std::unordered_set<std::string> tokens;
 	auto rcursor = body.begin(), wcursor = body.begin();
 	while(rcursor != body.end()) {
 		while(rcursor != body.end() && std::isspace(*rcursor))
@@ -308,7 +308,7 @@ static void sanitizeBody(std::string& body)
 			break;
 		auto tokenStart = rcursor;
 		while(rcursor != body.end() && !std::isspace(*rcursor++));
-		std::string_view token(&*tokenStart, rcursor-tokenStart);
+		std::string token(tokenStart, rcursor);
 		if(token.size() < 3 || tokens.find(token) != tokens.end())
 			continue;
 		tokens.emplace(token);
