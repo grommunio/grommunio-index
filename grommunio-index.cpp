@@ -329,8 +329,10 @@ public:
 
 	IndexDB& operator=(IndexDB&& other)
 	{
-		if(db)
+		if(db) {
+			sqliteExec("PRAGMA optimize");
 			sqlite3_close(db);
+		}
 		recheck = other.recheck;
 		dbpath = std::move(other.dbpath);
 		usrpath	= std::move(other.usrpath);
@@ -345,8 +347,10 @@ public:
 
 	~IndexDB()
 	{
-		if(db)
+		if(db) {
+			sqliteExec("PRAGMA optimize");
 			sqlite3_close(db);
+		}
 	}
 
 	/**
@@ -386,6 +390,10 @@ public:
 		if(res != SQLITE_OK)
 			throw std::runtime_error("Failed to open index database: "s + sqlite3_errmsg(db));
 		chmod(dbpath.c_str(), 0660); /* sqlite3_open ignores umask */
+		sqliteExec("PRAGMA journal_mode=WAL");
+		sqliteExec("PRAGMA synchronous=NORMAL");
+		sqliteExec("PRAGMA cache_size=-8192"); /* 8 MiB */
+		sqliteExec("PRAGMA mmap_size=268435456"); /* 256 MiB */
 		if(create || !checkSchemaVersion()) // Schemas are not migrated, just start with a new index
 			recreate(dbpath);
 		else
@@ -414,6 +422,8 @@ public:
 		removeFolders(updates.fDel);
 		insertMessages(updates.mUpd);
 		refreshHierarchy(updates.fUpd);
+		msg<DEBUG>("Running ANALYZE...");
+		sqliteExec("ANALYZE");
 		msg<STATUS>("Index updated.");
 	}
 
