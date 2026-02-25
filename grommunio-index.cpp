@@ -879,6 +879,7 @@ private:
 		msg<TRACE>("Inserting message ", message.fid, "/", message.mid);
 		reuse.reset();
 		stmt_ins.call(sqlite3_reset);
+		stmt_ins.call(sqlite3_clear_bindings);
 		uint32_t instance = client.send<LoadMessageInstanceRequest>(usrpath, "", 65001, false, 0, util::makeEidEx(1, message.mid)).instanceId;
 		auto rcpts = client.send<GetMessageInstanceRecipientsRequest>(usrpath, instance, 0, std::numeric_limits<uint16_t>::max());
 		auto attchs = client.send<QueryMessageInstanceAttachmentsTableRequest>(usrpath, instance, attchProps, 0, 0);
