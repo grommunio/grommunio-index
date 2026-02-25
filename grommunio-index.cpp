@@ -400,6 +400,7 @@ public:
 		chmod(dbpath.c_str(), 0660); /* sqlite3_open ignores umask */
 		sqliteExec("PRAGMA journal_mode=WAL");
 		sqliteExec("PRAGMA synchronous=NORMAL");
+		sqliteExec("PRAGMA busy_timeout=30000"); /* 30 s */
 		sqliteExec("PRAGMA cache_size=-8192"); /* 8 MiB */
 		sqliteExec("PRAGMA mmap_size=268435456"); /* 256 MiB */
 		if(create || !checkSchemaVersion()) // Schemas are not migrated, just start with a new index
