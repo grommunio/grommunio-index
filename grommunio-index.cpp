@@ -720,7 +720,7 @@ private:
 		static const Restriction genericOnly = Restriction::PROPERTY(Restriction::EQ, 0,
 		                                                             TaggedPropval(PropTag::FOLDERTYPE, uint32_t(1)));
 		msg<STATUS>("Checking for updates...");
-		auto lhtResponse = client.send<LoadHierarchyTableRequest>(usrpath, ipmsubtree, "", TableFlags::DEPTH);
+		auto lhtResponse = client.send<LoadHierarchyTableRequest>(usrpath, ipmsubtree, "", TableFlags::DEPTH, genericOnly);
 		auto qtResponse = client.send<QueryTableRequest>(usrpath, "", 0, lhtResponse.tableId, fTags, 0, lhtResponse.rowCount);
 		client.send<UnloadTableRequest>(usrpath, lhtResponse.tableId);
 		SQLiteStmt stmt(db, "SELECT commit_max, max_cn FROM hierarchy WHERE folder_id=?");
