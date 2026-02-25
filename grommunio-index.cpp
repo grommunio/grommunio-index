@@ -1261,7 +1261,7 @@ static std::vector<user_row> am_read_users(kvpairs &&vars)
 	}
 	std::vector<user_row> ulist;
 	for (DB_ROW row; (row = myres.fetch_row()) != nullptr; ) {
-		if (row[0] == nullptr)
+		if (row[0] == nullptr || row[1] == nullptr)
 			continue;
 		auto host = row[2] != nullptr && row[2][0] != '\0' ? row[2] : "::1";
 		ulist.emplace_back(user_row{row[0], row[1], host});
