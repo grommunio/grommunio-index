@@ -291,8 +291,11 @@ static void extractHtmlText(std::string &body, const xmlNode *root)
  */
 static void appendSanitizedHtml(std::string& body, const void* data, uint32_t len)
 {
-	std::unique_ptr<xmlDoc, our_del> doc(htmlReadMemory(static_cast<const char*>(data), len, nullptr, "utf-8",
-	                                                    HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING | HTML_PARSE_NONET));
+	static unsigned int flags = HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING | HTML_PARSE_NONET;
+	std::unique_ptr<xmlDoc, our_del> doc(htmlReadMemory(static_cast<const char*>(data), len, nullptr, "utf-8", flags));
+	if (doc == nullptr && len == 0)
+		/* Old libxml (prior to v2.13.0) has problems with 0-sized documents */
+		doc.reset(htmlReadMemory("<!-- -->", 7, nullptr, "utf-8", flags));
 	if(!doc) {
 		msg<WARNING>("failed to parse HTML data");
 		return;
