@@ -1099,6 +1099,9 @@ static std::string exmdbHost; ///< Exmdb host to connect to
 static std::string exmdbPort; ///< Port of the exmdb connection
 static std::optional<std::string> userpath; ///< Path to the user's home directory
 static std::string outpath; ///< Index database path (empty for default)
+static std::string index_root; ///< Root directory for index databases in all-user mode
+static std::string switch_user; ///< User to switch to when running as root
+static std::string switch_group; ///< Group to switch to when running as root
 static bool recheck = false; ///< Check folders even when they were not changed since the last indexing
 static bool create = false; ///< Always create a new index instead of updating
 static bool do_all_users;
@@ -1180,10 +1183,6 @@ static void parseArgs(int argc, char **argv)
 			exit(RESULT_ARGERR_SYN);
 		}
 	}
-	if(exmdbHost.empty())
-		exmdbHost = "localhost";
-	if(exmdbPort.empty())
-		exmdbPort = "5000";
 	verbosity = std::min(std::max(verbosity, 0), LOGLEVELS-1);
 }
 
@@ -1203,10 +1202,12 @@ static int single_mode()
 	return 0;
 }
 
-static kvpairs am_read_config(const char *path)
+static kvpairs am_read_config(const char *path, bool required = true)
 {
 	std::unique_ptr<FILE, our_del> fp(fopen(path, "r"));
 	if (fp == nullptr) {
+		if (!required && errno == ENOENT)
+			return {};
 		fprintf(stderr, "%s: %s\n", path, strerror(errno));
 		throw EXIT_FAILURE;
 	}
@@ -1230,6 +1231,33 @@ static kvpairs am_read_config(const char *path)
 	vars.try_emplace("mysql_dbname", "grommunio");
 	vars.try_emplace("mysql_host", "localhost");
 	return vars;
+}
+
+static void load_index_config()
+{
+	auto vars = am_read_config("/etc/gromox/index.cfg", false);
+	auto apply = [&](const char *key, std::string &dest) {
+		auto it = vars.find(key);
+		if (it != vars.end() && !it->second.empty())
+			dest = it->second;
+	};
+	if (index_root.empty())
+		index_root = "/var/lib/grommunio-web/sqlite-index";
+	if (switch_user.empty())
+		switch_user = "groindex";
+	if (switch_group.empty())
+		switch_group = "groweb";
+	apply("index_root", index_root);
+	apply("user", switch_user);
+	apply("group", switch_group);
+	if (exmdbHost.empty())
+		apply("exmdb_host", exmdbHost);
+	if (exmdbPort.empty())
+		apply("exmdb_port", exmdbPort);
+	if (exmdbHost.empty())
+		exmdbHost = "localhost";
+	if (exmdbPort.empty())
+		exmdbPort = "5000";
 }
 
 static std::vector<user_row> am_read_users(kvpairs &&vars)
@@ -1276,6 +1304,7 @@ static std::vector<user_row> am_read_users(kvpairs &&vars)
 int main(int argc, char **argv) try
 {
 	parseArgs(argc, argv);
+	load_index_config();
 
 	auto cfg = am_read_config("/etc/gromox/mysql_adaptor.cfg");
 	/* Generated index files should not be world-readable */
@@ -1289,16 +1318,15 @@ int main(int argc, char **argv) try
 	 * the right group already.
 	 */
 	if (geteuid() == 0) {
-		auto ret = HXproc_switch_user("groindex", "groweb");
+		auto ret = HXproc_switch_user(switch_user.c_str(), switch_group.c_str());
 		if (static_cast<int>(ret) < 0) {
-			fprintf(stderr, "switch_user grommunio/groweb: %s\n", strerror(errno));
+			fprintf(stderr, "switch_user %s/%s: %s\n", switch_user.c_str(), switch_group.c_str(), strerror(errno));
 			return EXIT_FAILURE;
 		}
 		/* setuid often disables coredumps, so restart to get them back. */
 		execv(argv[0], argv);
 	}
 	int bigret = EXIT_SUCCESS;
-	static const std::string index_root = "/var/lib/grommunio-web/sqlite-index";
 	fprintf(stderr, "Running grommunio-index for all user databases\n");
 	for (auto &&u : am_read_users(std::move(cfg))) {
 		auto index_home = index_root + "/" + u.username;
