@@ -1,0 +1,104 @@
+.\" SPDX-License-Identifier: CC-BY-SA-4.0 or-later
+.\" SPDX-FileCopyrightText: 2026 grommunio GmbH
+.TH grommunio\-index 8 "" "grommunio" "grommunio admin reference"
+.SH Name
+grommunio\-index \(em Fulltext search index generator for grommunio mailboxes
+.SH Synopsis
+\fBgrommunio\-index\fP [\fB\-c\fP] [\fB\-e\fP \fIhost\fP] [\fB\-o\fP \fIfile\fP] [\fB\-p\fP \fIport\fP] [\fB\-qrv\fP] \fIuserpath\fP
+.PP
+\fBgrommunio\-index\fP \fB\-A\fP [\fB\-c\fP] [\fB\-p\fP \fIport\fP] [\fB\-qrv\fP]
+.SH Description
+grommunio\-index builds and maintains SQLite\-based fulltext search indexes for
+grommunio mailboxes. It connects to the exmdb service to retrieve message
+properties, extracts and sanitizes text from plain\-text and HTML bodies,
+and writes the results into per\-user FTS5 databases.
+.PP
+In single\-user mode, the tool indexes the mailbox at the given
+\fIuserpath\fP. In all\-user mode (\fB\-A\fP), it reads the user list from the
+grommunio MySQL database and processes every user automatically, writing index
+databases into a shared directory tree.
+.PP
+grommunio\-index is typically invoked via its companion systemd timer
+(\fBgrommunio\-index.timer\fP) rather than manually.
+.SH Options
+.TP
+\fB\-A\fP, \fB\-\-all\fP
+Automatically process all local users. Cannot be combined with \fB\-e\fP,
+\fB\-o\fP, or a positional \fIuserpath\fP argument.
+.TP
+\fB\-c\fP, \fB\-\-create\fP
+Create a new index from scratch instead of updating an existing one.
+.TP
+\fB\-e\fP \fIhost\fP, \fB\-\-host\fP \fIhost\fP
+Hostname of the exmdb server to connect to.
+.br
+Default: \fIlocalhost\fP (overridable via index.cfg)
+.TP
+\fB\-h\fP, \fB\-\-help\fP
+Show a help message and exit.
+.TP
+\fB\-o\fP \fIfile\fP, \fB\-\-out\fP \fIfile\fP
+Write the index database to a specific file or directory instead of the
+default location inside the user's maildir.
+.TP
+\fB\-p\fP \fIport\fP, \fB\-\-port\fP \fIport\fP
+Port of the exmdb server.
+.br
+Default: \fI5000\fP (overridable via index.cfg)
+.TP
+\fB\-q\fP, \fB\-\-quiet\fP
+Reduce verbosity level. Can be specified multiple times.
+.TP
+\fB\-r\fP, \fB\-\-recheck\fP
+Check all messages regardless of folder timestamps. Normally, folders whose
+local\-commit\-time\-max has not changed since the last run are skipped.
+.TP
+\fB\-v\fP, \fB\-\-verbose\fP
+Increase verbosity level. Can be specified multiple times.
+.SH Configuration file
+The optional configuration file \fB/etc/gromox/index.cfg\fP can be used to
+override built\-in defaults. The file uses a simple key\-value format with one
+directive per line. Lines starting with \fB#\fP are comments, and whitespace
+around the \fB=\fP sign is ignored.
+.PP
+Command\-line arguments take precedence over configuration file values.
+If the file is absent, all built\-in defaults apply and no error is raised.
+.SS Configuration directives
+.TP
+\fBindex_root\fP
+Root directory under which per\-user index databases are stored in all\-user
+mode (\fB\-A\fP). Each user gets a subdirectory named after their login, with
+\fBindex.sqlite3\fP inside it.
+.br
+Default: \fI/var/lib/grommunio\-web/sqlite\-index\fP
+.TP
+\fBuser\fP
+System user to switch to when running as root. Only relevant in all\-user mode.
+.br
+Default: \fIgroindex\fP
+.TP
+\fBgroup\fP
+System group to switch to when running as root. Only relevant in all\-user mode.
+.br
+Default: \fIgroweb\fP
+.TP
+\fBexmdb_host\fP
+Default hostname of the exmdb server. Overridden by the \fB\-e\fP
+command\-line option.
+.br
+Default: \fIlocalhost\fP
+.TP
+\fBexmdb_port\fP
+Default port of the exmdb server. Overridden by the \fB\-p\fP command\-line
+option.
+.br
+Default: \fI5000\fP
+.SH Files
+.TP
+/etc/gromox/index.cfg
+Optional configuration file for grommunio\-index.
+.TP
+/etc/gromox/mysql_adaptor.cfg
+MySQL connection parameters, used in all\-user mode to retrieve the user list.
+.SH See also
+\fBgromox.cfg\fP(5)
