@@ -1,3 +1,10 @@
+v1.5 (2026-03-30)
+=================
+* Support optional /etc/gromox/index.cfg for runtime configuration
+  (index_root, user, group, exmdb_host, exmdb_port)
+* Add grommunio-index(8) man page
+
+
 v1.4 (2026-02-25)
 =================
 * Reduce default noise in all-user mode
