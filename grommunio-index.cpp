@@ -573,6 +573,51 @@ private:
 	};
 
 	/**
+	 * @brief      RAII wrapper for a write transaction
+	 *
+	 * BEGIN IMMEDIATE takes the write lock up front, where the busy_timeout
+	 * applies; a plain deferred BEGIN upgrades to the write lock lazily on the
+	 * first write, an upgrade for which SQLite bypasses the busy handler and
+	 * returns SQLITE_BUSY immediately. A transaction destroyed without commit()
+	 * (e.g. on exception) is rolled back, so the connection is never left
+	 * half-open.
+	 */
+	struct Transaction
+	{
+		explicit Transaction(sqlite3* db) : db(db)
+		{
+			for(int attempt = 0; ; ++attempt) {
+				int res = sqlite3_exec(db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+				if(res == SQLITE_OK)
+					return;
+				if((res != SQLITE_BUSY && res != SQLITE_LOCKED) || attempt >= 5)
+					throw std::runtime_error("BEGIN IMMEDIATE failed: "s + sqlite3_errmsg(db));
+				sqlite3_sleep(100 * (attempt + 1));
+			}
+		}
+
+		~Transaction()
+		{
+			if(!committed)
+				sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+		}
+
+		Transaction(const Transaction&) = delete;
+		Transaction& operator=(const Transaction&) = delete;
+
+		void commit()
+		{
+			int res = sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr);
+			if(res != SQLITE_OK)
+				throw std::runtime_error("COMMIT failed: "s + sqlite3_errmsg(db));
+			committed = true;
+		}
+
+		sqlite3* db;
+		bool committed = false;
+	};
+
+	/**
 	 * @brief      Helper struct for messages
 	 */
 	struct Message
@@ -814,18 +859,20 @@ private:
 	 */
 	void removeFolders(const std::unordered_set<uint64_t> folders)
 	{
+		if(folders.empty())
+			return;
 		SQLiteStmt delMsgStmt(db, "DELETE FROM msg_content WHERE folder_id=?");
 		SQLiteStmt delFolderStmt(db, "DELETE FROM hierarchy WHERE folder_id=?");
-		sqliteExec("BEGIN");
+		Transaction txn(db);
 		for(uint64_t fid : folders) {
 			delMsgStmt.call(sqlite3_reset);
 			delMsgStmt.call(sqlite3_bind_int64, 1, fid);
-			sqlite3_step(delMsgStmt);
+			delMsgStmt.exec();
 			delFolderStmt.call(sqlite3_reset);
 			delFolderStmt.call(sqlite3_bind_int64, 1, fid);
-			sqlite3_step(delFolderStmt);
+			delFolderStmt.exec();
 		}
-		sqliteExec("COMMIT");
+		txn.commit();
 	}
 
 	/**
@@ -836,17 +883,17 @@ private:
 	void removeMessages(const std::unordered_set<uint64_t>& messages)
 	{
 		msg<DEBUG>("Removing ", messages.size(), " modified messages");
-		if(!update)
+		if(!update || messages.empty())
 			return;
 		SQLiteStmt stmt_del(db, "DELETE FROM msg_content WHERE message_id=?");
-		sqliteExec("BEGIN");
+		Transaction txn(db);
 		for(const auto& mid : messages)
 		{
 			stmt_del.call(sqlite3_reset);
 			stmt_del.call(sqlite3_bind_int64, 1, mid);
 			stmt_del.exec();
 		}
-		sqliteExec("COMMIT");
+		txn.commit();
 	}
 
 	/**
@@ -1011,8 +1058,10 @@ private:
 	 */
 	void refreshHierarchy(const std::vector<Hierarchy>& updated)
 	{
+		if(updated.empty())
+			return;
 		SQLiteStmt stmt(db, "REPLACE INTO hierarchy (folder_id, commit_max, max_cn) VALUES (?, ?, ?)");
-		sqliteExec("BEGIN");
+		Transaction txn(db);
 		for(const Hierarchy& h : updated)
 		{
 			stmt.call(sqlite3_reset);
@@ -1021,7 +1070,7 @@ private:
 			stmt.call(sqlite3_bind_int64, 3, h.maxCn);
 			stmt.exec();
 		}
-		sqliteExec("COMMIT");
+		txn.commit();
 	}
 
 	/**
