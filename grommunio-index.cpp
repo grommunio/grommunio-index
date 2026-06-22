@@ -919,21 +919,56 @@ private:
 		SQLiteStmt stmt_idx(db, "INSERT OR REPLACE INTO messages "
 		                        "(rowid, sender, sending, recipients, subject, content, attachments, others) "
 		                        "VALUES (:rowid, :sender, :sending, :recipients, :subject, :content, :attachments, :others)");
-		sqliteExec("BEGIN");
+		/*
+		 * insertMessage() does several slow exmdb round-trips, so one
+		 * transaction across all messages would hold the write lock (and grow
+		 * the WAL) for the whole run. Commit in batches and retry a batch that
+		 * hits a transient lock, instead of failing every single message.
+		 */
+		static constexpr size_t BATCH_SIZE = 512;
 		auto last = std::chrono::high_resolution_clock::now();
-		for(const Message& message : messages)
+		for(size_t start = 0; start < messages.size(); start += BATCH_SIZE)
 		{
-			try {
-				insertMessage(stmt_ins, stmt_idx, message, msgtags);
-			} catch (const std::exception& e)
-			{msg<ERROR>("Failed to insert message ", message.fid, "/", message.mid, ": ", e.what());}
+			size_t end = std::min(start + BATCH_SIZE, messages.size());
+			for(int attempt = 0; ; ++attempt)
+			{
+				try {
+					Transaction txn(db);
+					for(size_t i = start; i < end; ++i)
+					{
+						const Message& message = messages[i];
+						try {
+							insertMessage(stmt_ins, stmt_idx, message, msgtags);
+						} catch (const SQLiteError& e) {
+							if(e.busy())
+								throw;
+							msg<ERROR>("Failed to insert message ", message.fid, "/", message.mid, ": ", e.what());
+						} catch (const std::exception& e) {
+							msg<ERROR>("Failed to insert message ", message.fid, "/", message.mid, ": ", e.what());
+						}
+					}
+					txn.commit();
+					break;
+				} catch (const SQLiteError& e) {
+					if(e.busy() && attempt < 5) {
+						msg<WARNING>("Index busy (", e.what(), "), retrying messages ",
+						             start, "-", end, " of ", messages.size());
+						sqlite3_sleep(200 * (attempt + 1));
+						continue;
+					}
+					msg<ERROR>("Failed to commit messages ", start, "-", end, ": ", e.what());
+					break;
+				} catch (const std::exception& e) {
+					msg<ERROR>("Failed to commit messages ", start, "-", end, ": ", e.what());
+					break;
+				}
+			}
 			auto now = std::chrono::high_resolution_clock::now();
 			if(now-last > std::chrono::seconds(30)) {
-				msg<DEBUG>("Indexed ", &message-&messages[0], "/", messages.size(), " messages");
+				msg<DEBUG>("Indexed ", end, "/", messages.size(), " messages");
 				last = now;
 			}
 		}
-		sqliteExec("COMMIT");
 	}
 
 	/**
