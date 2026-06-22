@@ -1,3 +1,9 @@
+v1.6 (2026-06-22)
+=================
+* Fix "database is locked" errors when updating large mailboxes
+* Commit inserts in batches to keep the index responsive during indexing
+
+
 v1.5 (2026-03-30)
 =================
 * Support optional /etc/gromox/index.cfg for runtime configuration
