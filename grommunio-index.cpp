@@ -406,6 +406,8 @@ public:
 		sqliteExec("PRAGMA busy_timeout=30000"); /* 30 s */
 		sqliteExec("PRAGMA cache_size=-8192"); /* 8 MiB */
 		sqliteExec("PRAGMA mmap_size=268435456"); /* 256 MiB */
+		sqliteExec("PRAGMA wal_autocheckpoint=1000"); /* ~4 MiB */
+		sqliteExec("PRAGMA journal_size_limit=67108864"); /* 64 MiB */
 		if(create || !checkSchemaVersion()) // Schemas are not migrated, just start with a new index
 			recreate(dbpath);
 		else
