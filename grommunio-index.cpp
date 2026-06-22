@@ -443,6 +443,19 @@ private:
 	using PropvalMap = std::unordered_map<uint32_t, structures::TaggedPropval>; ///< Tag ID -> TaggedPropval mapping
 
 	/**
+	 * @brief      Exception carrying the originating SQLite result code
+	 *
+	 * Lets callers tell transient lock contention (SQLITE_BUSY / SQLITE_LOCKED)
+	 * apart from permanent errors.
+	 */
+	struct SQLiteError : std::runtime_error
+	{
+		SQLiteError(int code, const std::string& what) : std::runtime_error(what), code(code) {}
+		bool busy() const noexcept {return code == SQLITE_BUSY || code == SQLITE_LOCKED;}
+		int code;
+	};
+
+	/**
 	 * @brief      SQLite3 statement wrapper class
 	 *
 	 * Implements some convenience function for raw sqlite3 statements
@@ -489,7 +502,7 @@ private:
 		{
 			int res = func(stmt, std::forward<cArgs>(args)...);
 			if(res != SQLITE_OK)
-				throw std::runtime_error(sqlite3_errmsg(sqlite3_db_handle(stmt)));
+				throw SQLiteError(res, sqlite3_errmsg(sqlite3_db_handle(stmt)));
 		}
 
 		/**
@@ -552,7 +565,7 @@ private:
 		{
 			int result = sqlite3_step(stmt);
 			if(result != SQLITE_DONE && result != SQLITE_ROW)
-				throw std::runtime_error("SQLite query failed: " + std::to_string(result));
+				throw SQLiteError(result, "SQLite query failed: " + std::to_string(result));
 			return result;
 		}
 
