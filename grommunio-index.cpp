@@ -341,7 +341,7 @@ public:
 	IndexDB& operator=(IndexDB&& other)
 	{
 		if(db) {
-			sqliteExec("PRAGMA optimize");
+			sqliteMaintenance("PRAGMA optimize");
 			sqlite3_close(db);
 		}
 		recheck = other.recheck;
@@ -359,7 +359,7 @@ public:
 	~IndexDB()
 	{
 		if(db) {
-			sqliteExec("PRAGMA optimize");
+			sqliteMaintenance("PRAGMA optimize");
 			sqlite3_close(db);
 		}
 	}
@@ -450,7 +450,7 @@ public:
 		 */
 		refreshHierarchy(updates.fUpd, failed);
 		msg<DEBUG>("Running ANALYZE...");
-		sqliteExec("ANALYZE");
+		sqliteMaintenance("ANALYZE");
 		if(failed.empty())
 			msg<STATUS>("Index updated.");
 		else
@@ -744,6 +744,29 @@ private:
 		if(res != SQLITE_OK && res != SQLITE_ROW && res != SQLITE_DONE)
 			msg<WARNING>("SQLite query failed: ", res, '(', sqlite3_errmsg(db), ')');
 		return res;
+	}
+
+	/**
+	 * @brief      Run an optional maintenance statement (ANALYZE, optimize)
+	 *
+	 * These only refresh query-planner statistics, so a lock held by
+	 * grommunio-web is harmless: retry briefly, then skip quietly rather than
+	 * warning about a locked database (which looks like a real failure).
+	 *
+	 * @param      query  Query string to execute
+	 */
+	inline void sqliteMaintenance(const char* query)
+	{
+		for(int attempt = 0; ; ++attempt) {
+			int res = sqlite3_exec(db, query, nullptr, nullptr, nullptr);
+			if(res == SQLITE_OK || res == SQLITE_ROW || res == SQLITE_DONE)
+				return;
+			if((res != SQLITE_BUSY && res != SQLITE_LOCKED) || attempt >= 3) {
+				msg<DEBUG>("Skipped \"", query, "\": ", sqlite3_errmsg(db));
+				return;
+			}
+			sqlite3_sleep(200 * (attempt + 1));
+		}
 	}
 
 	/**
