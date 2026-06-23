@@ -432,13 +432,30 @@ public:
 			return;
 		}
 		msg<STATUS>("Updating index...");
+		/*
+		 * Connect to exmdb and resolve the named proptags before deleting
+		 * anything: these can throw on a transient exmdb failure, and a folder
+		 * must never be left with its messages deleted but not reinserted.
+		 */
+		client.reconnect();
+		namedProptags = getNamedProptags();
 		removeMessages(updates.mDel);
 		removeFolders(updates.fDel);
-		insertMessages(updates.mUpd);
-		refreshHierarchy(updates.fUpd);
+		auto failed = insertMessages(updates.mUpd);
+		/*
+		 * Only advance the stored commit_max/max_cn for folders we fully
+		 * (re)indexed. A folder with a failed insert keeps its old hierarchy
+		 * row, so getUpdates() rescans it next run and the missing messages are
+		 * picked up again instead of being skipped forever.
+		 */
+		refreshHierarchy(updates.fUpd, failed);
 		msg<DEBUG>("Running ANALYZE...");
 		sqliteExec("ANALYZE");
-		msg<STATUS>("Index updated.");
+		if(failed.empty())
+			msg<STATUS>("Index updated.");
+		else
+			msg<WARNING>("Index updated, but ", failed.size(),
+			             " folder(s) had errors and will be retried on the next run.");
 	}
 
 private:
@@ -902,14 +919,16 @@ private:
 	 * @brief      Insert new/updated messages
 	 *
 	 * @param      messages  Messages to insert
+	 *
+	 * @return     IDs of folders that had at least one message fail to index.
+	 *             The caller must not advance the hierarchy for these folders.
 	 */
-	void insertMessages(const std::vector<Message>& messages)
+	std::unordered_set<uint64_t> insertMessages(const std::vector<Message>& messages)
 	{
+		std::unordered_set<uint64_t> failed;
 		msg<DEBUG>("Inserting new messages");
 		if(messages.empty())
-			return;
-		client.reconnect();
-		namedProptags = getNamedProptags();
+			return failed;
 		std::vector<uint32_t> msgtags;
 		msgtags.resize(namedProptags.size()+msgtags1.size()+msgtags2.size());
 		auto tagend = copy(namedProptags.begin(), namedProptags.end(), msgtags.begin());
@@ -945,8 +964,10 @@ private:
 							if(e.busy())
 								throw;
 							msg<ERROR>("Failed to insert message ", message.fid, "/", message.mid, ": ", e.what());
+							failed.insert(message.fid);
 						} catch (const std::exception& e) {
 							msg<ERROR>("Failed to insert message ", message.fid, "/", message.mid, ": ", e.what());
+							failed.insert(message.fid);
 						}
 					}
 					txn.commit();
@@ -959,9 +980,13 @@ private:
 						continue;
 					}
 					msg<ERROR>("Failed to commit messages ", start, "-", end, ": ", e.what());
+					for(size_t i = start; i < end; ++i)
+						failed.insert(messages[i].fid);
 					break;
 				} catch (const std::exception& e) {
 					msg<ERROR>("Failed to commit messages ", start, "-", end, ": ", e.what());
+					for(size_t i = start; i < end; ++i)
+						failed.insert(messages[i].fid);
 					break;
 				}
 			}
@@ -971,6 +996,7 @@ private:
 				last = now;
 			}
 		}
+		return failed;
 	}
 
 	/**
@@ -1091,9 +1117,15 @@ private:
 	/**
 	 * @brief      Refresh the folder hierarchy
 	 *
-	 * @param      updated    List of folders
+	 * Folders listed in @p failed are skipped: their stored commit_max stays
+	 * behind the mailbox so getUpdates() rescans them on the next run and the
+	 * messages that did not index this time are retried instead of being
+	 * permanently skipped.
+	 *
+	 * @param      updated   List of folders
+	 * @param      failed    IDs of folders that had a failed message insert
 	 */
-	void refreshHierarchy(const std::vector<Hierarchy>& updated)
+	void refreshHierarchy(const std::vector<Hierarchy>& updated, const std::unordered_set<uint64_t>& failed)
 	{
 		if(updated.empty())
 			return;
@@ -1101,6 +1133,8 @@ private:
 		Transaction txn(db);
 		for(const Hierarchy& h : updated)
 		{
+			if(failed.count(h.folderId))
+				continue;
 			stmt.call(sqlite3_reset);
 			stmt.call(sqlite3_bind_int64, 1, h.folderId);
 			stmt.call(sqlite3_bind_int64, 2, h.lctm);
