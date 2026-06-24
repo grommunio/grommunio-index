@@ -405,7 +405,13 @@ public:
 		sqliteExec("PRAGMA synchronous=NORMAL");
 		sqliteExec("PRAGMA busy_timeout=30000"); /* 30 s */
 		sqliteExec("PRAGMA cache_size=-8192"); /* 8 MiB */
-		sqliteExec("PRAGMA mmap_size=268435456"); /* 256 MiB */
+		/*
+		 * No mmap for the writer: memory-mapped I/O is a documented corruption
+		 * risk when one process maps the file while another (grommunio-web) does
+		 * not, and it only ever speeds up reads, not writes. The reader may still
+		 * use mmap on its own connection.
+		 */
+		sqliteExec("PRAGMA mmap_size=0");
 		sqliteExec("PRAGMA wal_autocheckpoint=1000"); /* ~4 MiB */
 		sqliteExec("PRAGMA journal_size_limit=67108864"); /* 64 MiB */
 		if(create || !checkSchemaVersion()) // Schemas are not migrated, just start with a new index
@@ -449,8 +455,13 @@ public:
 		 * picked up again instead of being skipped forever.
 		 */
 		refreshHierarchy(updates.fUpd, failed);
-		msg<DEBUG>("Running ANALYZE...");
-		sqliteMaintenance("ANALYZE");
+		/*
+		 * Refresh planner statistics via PRAGMA optimize on close (see the
+		 * destructor), not a full ANALYZE every run: optimize is near-no-op,
+		 * self-limiting, and only re-analyses tables whose row counts changed
+		 * materially, which keeps sqlite_stat1 churn (and its corruption
+		 * surface) to a minimum.
+		 */
 		if(failed.empty())
 			msg<STATUS>("Index updated.");
 		else
@@ -747,9 +758,9 @@ private:
 	}
 
 	/**
-	 * @brief      Run an optional maintenance statement (ANALYZE, optimize)
+	 * @brief      Run an optional maintenance statement (PRAGMA optimize)
 	 *
-	 * These only refresh query-planner statistics, so a lock held by
+	 * This only refreshes query-planner statistics, so a lock held by
 	 * grommunio-web is harmless: retry briefly, then skip quietly rather than
 	 * warning about a locked database (which looks like a real failure).
 	 *
