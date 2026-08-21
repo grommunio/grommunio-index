@@ -403,7 +403,7 @@ public:
 		chmod(dbpath.c_str(), 0660); /* sqlite3_open ignores umask */
 		sqliteExec("PRAGMA journal_mode=WAL");
 		sqliteExec("PRAGMA synchronous=NORMAL");
-		sqliteExec("PRAGMA busy_timeout=30000"); /* 30 s */
+		sqlite3_busy_timeout(db, BUSY_TIMEOUT);
 		sqliteExec("PRAGMA cache_size=-8192"); /* 8 MiB */
 		/*
 		 * No mmap for the writer: memory-mapped I/O is a documented corruption
@@ -414,7 +414,11 @@ public:
 		sqliteExec("PRAGMA mmap_size=0");
 		sqliteExec("PRAGMA wal_autocheckpoint=1000"); /* ~4 MiB */
 		sqliteExec("PRAGMA journal_size_limit=67108864"); /* 64 MiB */
-		if(create || !checkSchemaVersion()) // Schemas are not migrated, just start with a new index
+		/* Waiting out a lock is pointless when only deciding whether to rebuild */
+		sqlite3_busy_timeout(db, PROBE_TIMEOUT);
+		bool rebuild = create || !checkSchemaVersion() || !checkIndexUsable(); // Schemas are not migrated, just start with a new index
+		sqlite3_busy_timeout(db, BUSY_TIMEOUT);
+		if(rebuild)
 			recreate(dbpath);
 		else
 			msg<STATUS>("Updating existing index ", dbpath);
@@ -694,6 +698,8 @@ private:
 
 
 	static constexpr int64_t SCHEMAVERSION = 2;
+	static constexpr int BUSY_TIMEOUT = 30000; ///< How long to wait for a locked index (ms)
+	static constexpr int PROBE_TIMEOUT = 2000; ///< How long the index check waits for a lock (ms)
 
 	static std::array<structures::PropertyName, 14> namedTags; ///< Array of named tags to query
 	static constexpr std::array<uint16_t, 14> namedTagTypes = {
@@ -1179,18 +1185,94 @@ private:
 	}
 
 	/**
+	 * @brief      Decide whether a failed query condemns the index
+	 *
+	 * Rebuilding discards the whole index of a mailbox, so only errors that
+	 * will not resolve on their own qualify.
+	 *
+	 * @param      res   Result code of the failed statement
+	 *
+	 * @return     true if the stored data is unusable
+	 */
+	static bool permanentFailure(int res)
+	{
+		switch(res & 0xff) // Mask out extended result codes
+		{
+		case SQLITE_ERROR: // Missing table, e.g. "vtable constructor failed"
+		case SQLITE_CORRUPT:
+		case SQLITE_NOTADB:
+		case SQLITE_FORMAT:
+			return true;
+		default: // Locked, out of memory, I/O error, ... - may work next run
+			return false;
+		}
+	}
+
+	/**
 	 * @brief      Check whether the database schema matches current schema
 	 *
-	 * @return     false if schema version does not match or could not be determined, true otherwise
+	 * A database that cannot be read at all is reported as current, so that a
+	 * temporary problem does not discard an intact index.
+	 *
+	 * @return     false if schema version does not match, true if it does or could not be determined
 	 */
 	bool checkSchemaVersion() const
 	{
-		try {
-			SQLiteStmt stmt(db, "SELECT value FROM configurations WHERE key='schemaversion'");
-			return sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int64(stmt, 0) == SCHEMAVERSION;
-		} catch(...) {
+		sqlite3_stmt* stmt = nullptr;
+		int res = sqlite3_prepare_v2(db, "SELECT value FROM configurations WHERE key='schemaversion'", -1, &stmt, nullptr);
+		if(res == SQLITE_OK)
+			res = sqlite3_step(stmt);
+		bool current = res == SQLITE_ROW && sqlite3_column_int64(stmt, 0) == SCHEMAVERSION;
+		// SQLITE_DONE means the row is missing, i.e. a mismatch like any other
+		bool inconclusive = res != SQLITE_ROW && res != SQLITE_DONE && !permanentFailure(res);
+		if(inconclusive)
+			msg<WARNING>("Cannot read schema version of ", dbpath, " (", sqlite3_errmsg(db), "), assuming it is current");
+		sqlite3_finalize(stmt);
+		return current || inconclusive;
+	}
+
+	/**
+	 * @brief      Check whether the message index can still be used
+	 *
+	 * checkSchemaVersion() only reads an ordinary table, so an index with lost
+	 * or damaged FTS5 shadow tables passes it and then breaks every subsequent
+	 * run, either with "vtable constructor failed: messages" or with a failed
+	 * insert per message. Reading from the index here turns both into a rebuild.
+	 *
+	 * Both queries are needed: the scan covers the segment data and the
+	 * tombstones, the term lookup the segment index. They stop at the first
+	 * row, so they cost ~130 us even for a 100k message index.
+	 *
+	 * @return     false if the index is damaged and has to be rebuilt
+	 */
+	bool checkIndexUsable() const
+	{
+		static const char* probes[] = {
+			"SELECT rowid FROM messages LIMIT 1",
+			"SELECT rowid FROM messages WHERE messages MATCH 'grommunioindexprobe' LIMIT 1",
+		};
+		for(const char* probe : probes)
+		{
+			sqlite3_stmt* stmt = nullptr;
+			int res = sqlite3_prepare_v2(db, probe, -1, &stmt, nullptr);
+			if(res == SQLITE_OK)
+				res = sqlite3_step(stmt);
+			if(res == SQLITE_OK || res == SQLITE_ROW || res == SQLITE_DONE)
+			{
+				sqlite3_finalize(stmt);
+				continue;
+			}
+			std::string err = sqlite3_errmsg(db); // Must be read before finalize()
+			sqlite3_finalize(stmt);
+			if(!permanentFailure(res))
+			{
+				msg<WARNING>("Cannot verify index ", dbpath, " (", err, "), continuing anyway");
+				return true;
+			}
+			msg<WARNING>("Index ", dbpath, " is damaged (", err, "), rebuilding it");
 			return false;
 		}
+		return true;
 	}
 
 	/**
