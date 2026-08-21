@@ -4,6 +4,7 @@ v1.6 (2026-06-22)
 * Commit inserts in batches to keep the index responsive during indexing
 * Retry folders that failed to index instead of dropping their messages
 * Disable writer mmap and use PRAGMA optimize to avoid index corruption
+* Rebuild a damaged index instead of failing on every run
 
 
 v1.5 (2026-03-30)
