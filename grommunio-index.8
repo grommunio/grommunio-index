@@ -4,7 +4,7 @@
 .SH Name
 grommunio\-index \(em Fulltext search index generator for grommunio mailboxes
 .SH Synopsis
-\fBgrommunio\-index\fP [\fB\-c\fP] [\fB\-e\fP \fIhost\fP] [\fB\-o\fP \fIfile\fP] [\fB\-p\fP \fIport\fP] [\fB\-qrv\fP] \fIuserpath\fP
+\fBgrommunio\-index\fP [\fB\-Pc\fP] [\fB\-e\fP \fIhost\fP] [\fB\-o\fP \fIfile\fP] [\fB\-p\fP \fIport\fP] [\fB\-qrv\fP] \fIuserpath\fP
 .PP
 \fBgrommunio\-index\fP \fB\-A\fP [\fB\-c\fP] [\fB\-p\fP \fIport\fP] [\fB\-qrv\fP]
 .SH Description
@@ -13,18 +13,31 @@ grommunio mailboxes. It connects to the exmdb service to retrieve message
 properties, extracts and sanitizes text from plain\-text and HTML bodies,
 and writes the results into per\-user FTS5 databases.
 .PP
-In single\-user mode, the tool indexes the mailbox at the given
-\fIuserpath\fP. In all\-user mode (\fB\-A\fP), it reads the user list from the
-grommunio MySQL database and processes every user automatically, writing index
-databases into a shared directory tree.
+In single\-store mode, the tool indexes the mailbox at the given
+\fIuserpath\fP. With \fB\-P\fP, \fIuserpath\fP is taken to be a domain's public
+store (its \fIhomedir\fP) instead of a private mailbox. In all\-user mode
+(\fB\-A\fP), it reads the user and domain lists from the grommunio MySQL
+database and processes every mailbox and public store automatically, writing
+index databases into a shared directory tree.
 .PP
 grommunio\-index is typically invoked via its companion systemd timer
 (\fBgrommunio\-index.timer\fP) rather than manually.
+.SS Public stores
+Read state in a public store is kept per user and therefore cannot be
+represented in one index shared by everyone. Every message is recorded as
+unread, which makes the "unread only" search filter a no\-op on public folders
+rather than hiding read messages. Everything else is indexed exactly as for a
+private mailbox.
 .SH Options
 .TP
 \fB\-A\fP, \fB\-\-all\fP
-Automatically process all local users. Cannot be combined with \fB\-e\fP,
-\fB\-o\fP, or a positional \fIuserpath\fP argument.
+Automatically process all local users and public stores. Cannot be combined
+with \fB\-e\fP, \fB\-o\fP, \fB\-P\fP, or a positional \fIuserpath\fP argument.
+.TP
+\fB\-P\fP, \fB\-\-public\fP
+Treat \fIuserpath\fP as a domain's public store rather than a private mailbox.
+Public stores use a different folder layout, so the flag has to match the store
+that is being indexed.
 .TP
 \fB\-c\fP, \fB\-\-create\fP
 Create a new index from scratch instead of updating an existing one.
@@ -66,11 +79,20 @@ If the file is absent, all built\-in defaults apply and no error is raised.
 .SS Configuration directives
 .TP
 \fBindex_root\fP
-Root directory under which per\-user index databases are stored in all\-user
-mode (\fB\-A\fP). Each user gets a subdirectory named after their login, with
-\fBindex.sqlite3\fP inside it.
+Root directory under which index databases are stored in all\-user mode
+(\fB\-A\fP). Each user gets a subdirectory named after their login and each
+public store one named after its domain, with \fBindex.sqlite3\fP inside it.
+Logins always contain an \fB@\fP and domain names never do, so the two cannot
+collide.
 .br
 Default: \fI/var/lib/grommunio\-web/sqlite\-index\fP
+.TP
+\fBindex_public\fP
+Whether all\-user mode (\fB\-A\fP) also indexes the public store of every
+active domain. Set to \fIno\fP, \fIoff\fP or \fI0\fP to index private mailboxes
+only.
+.br
+Default: \fIyes\fP
 .TP
 \fBuser\fP
 System user to switch to when running as root. Only relevant in all\-user mode.
@@ -99,6 +121,7 @@ Default: \fI5000\fP
 Optional configuration file for grommunio\-index.
 .TP
 /etc/gromox/mysql_adaptor.cfg
-MySQL connection parameters, used in all\-user mode to retrieve the user list.
+MySQL connection parameters, used in all\-user mode to retrieve the user and
+domain lists.
 .SH See also
 \fBgromox.cfg\fP(5)

@@ -88,8 +88,9 @@ struct our_del {
 	inline void operator()(xmlDoc *d) const { xmlFreeDoc(d); }
 };
 
-struct user_row {
-	std::string username, dir, host;
+struct store_row {
+	std::string name, dir, host;
+	bool isPublic = false;
 };
 
 }
@@ -345,6 +346,7 @@ public:
 			sqlite3_close(db);
 		}
 		recheck = other.recheck;
+		isPublic = other.isPublic;
 		dbpath = std::move(other.dbpath);
 		usrpath	= std::move(other.usrpath);
 		client = std::move(other.client);
@@ -376,11 +378,12 @@ public:
 	 * @param      exmdbHost  Host name for exmdb connection
 	 * @param      exmdbPort  Port for exmdb connection
 	 * @param      outpath    Path of the output database or empty for default
+	 * @param      isPublic   Whether userdir refers to a public (domain) store
 	 */
 	IndexDB(const fs::path& userdir, const std::string& exmdbHost, const std::string& exmdbPort, const std::string& outpath,
-	        bool create=false, bool recheck=false) :
-	    usrpath(userdir), client(exmdbHost, exmdbPort, userdir, true, ExmdbClient::AUTO_RECONNECT),
-	    recheck(recheck)
+	        bool create=false, bool recheck=false, bool isPublic=false) :
+	    usrpath(userdir), client(exmdbHost, exmdbPort, userdir, !isPublic, ExmdbClient::AUTO_RECONNECT),
+	    recheck(recheck), isPublic(isPublic)
 	{
 		if(outpath.empty())
 		{
@@ -745,6 +748,7 @@ private:
 	sqlite3* db = nullptr; ///< SQLite database connection
 	bool update = false; ///< Whether index is updated
 	bool recheck = false; ///< Whether to check all folders regardless of timestamp
+	bool isPublic = false; ///< Whether the store is a public (domain) store
 
 	/**
 	 * @brief      Convenience wrapper for sqlite3_index
@@ -845,7 +849,8 @@ private:
 		using namespace exmdbpp::structures;
 		static const uint32_t fTags[] = {PropTag::FOLDERID, PropTag::LOCALCOMMITTIMEMAX};
 		static const uint32_t cTags[] = {PropTag::MID, PropTag::CHANGENUMBER, PropTag::ENTRYID};
-		static const uint64_t ipmsubtree = util::makeEidEx(1, PrivateFid::IPMSUBTREE);
+		/* Public stores have their own, differently numbered IPM subtree */
+		const uint64_t ipmsubtree = util::makeEidEx(1, isPublic? PublicFid::IPMSUBTREE : PrivateFid::IPMSUBTREE);
 		static const Restriction genericOnly = Restriction::PROPERTY(Restriction::EQ, 0,
 		                                                             TaggedPropval(PropTag::FOLDERTYPE, uint32_t(1)));
 		msg<STATUS>("Checking for updates...");
@@ -1353,6 +1358,8 @@ static std::string switch_user; ///< User to switch to when running as root
 static std::string switch_group; ///< Group to switch to when running as root
 static bool recheck = false; ///< Check folders even when they were not changed since the last indexing
 static bool create = false; ///< Always create a new index instead of updating
+static bool is_public = false; ///< Treat the given mailbox path as a public (domain) store
+static bool index_public = true; ///< Also index public stores in all-user mode
 static bool do_all_users;
 
 /**
@@ -1363,12 +1370,13 @@ static bool do_all_users;
 [[noreturn]] static void printHelp(const char* name)
 {
 	std::cout << "grommunio mailbox indexing tool\n"
-	        "\nUsage: " << name << " [-c] [-e host] [-f] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
+	        "\nUsage: " << name << " [-P] [-c] [-e host] [-f] [-h] [-o file] [-p port] [-q] [-v] <userpath>\n"
 	          "Usage: " << name << " -A [-c] [-f] [-h] [-p port] [-q] [-v]\n"
 	        "\nPositional arguments:\n"
-	        "\t userpath\t\tPath to the user's mailbox directory\n"
+	        "\t userpath\t\tPath to the user's mailbox or the domain's public store directory\n"
 	        "\nOptional arguments:\n"
-	        "\t-A\t--all    \tAutomatically process all local users (-e, -o ignored)\n"
+	        "\t-A\t--all    \tAutomatically process all local users and public stores (-e, -o ignored)\n"
+	        "\t-P\t--public \tTreat userpath as a public (domain) store\n"
 	        "\t-c\t--create \tCreate a new index instead of updating\n"
 	        "\t-e\t--host   \tHostname of the exmdb server\n"
 	        "\t-h\t--help   \tShow this help message and exit\n"
@@ -1391,6 +1399,7 @@ static void parseArgs(int argc, char **argv)
 {
 	static const struct option longopts[] = {
 		{"all", false, nullptr, 'A'},
+		{"public", false, nullptr, 'P'},
 		{"create", false, nullptr, 'c'},
 		{"host", true, nullptr, 'e'},
 		{"help", false, nullptr, 'h'},
@@ -1403,9 +1412,10 @@ static void parseArgs(int argc, char **argv)
 	};
 
 	int c;
-	while ((c = getopt_long(argc, argv, "Ace:ho:p:qrv", longopts, nullptr)) >= 0) {
+	while ((c = getopt_long(argc, argv, "APce:ho:p:qrv", longopts, nullptr)) >= 0) {
 		switch (c) {
 		case 'A': do_all_users = true; break;
+		case 'P': is_public = true; break;
 		case 'c': create = true; break;
 		case 'e': exmdbHost = optarg; break;
 		case 'h': printHelp(*argv); break;
@@ -1423,6 +1433,10 @@ static void parseArgs(int argc, char **argv)
 			msg<FATAL>("Cannot combine -A with -e/-o/userpath");
 			exit(RESULT_ARGERR_SYN);
 		}
+		if (is_public) {
+			msg<FATAL>("Cannot combine -A with -P; -A covers public stores on its own");
+			exit(RESULT_ARGERR_SYN);
+		}
 	} else {
 		if (argc > optind)
 			userpath.emplace(argv[optind++]);
@@ -1437,10 +1451,11 @@ static void parseArgs(int argc, char **argv)
 
 static int single_mode()
 {
-	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", user=", userpath.value(), ", output=", outpath.empty()? "<default>" : outpath);
+	msg<DEBUG>("exmdb=", exmdbHost, ":", exmdbPort, ", ", is_public? "domain=" : "user=", userpath.value(),
+	           ", output=", outpath.empty()? "<default>" : outpath);
 	IndexDB cache;
 	try {
-		cache = IndexDB(userpath.value(), exmdbHost, exmdbPort, outpath, create, recheck);
+		cache = IndexDB(userpath.value(), exmdbHost, exmdbPort, outpath, create, recheck, is_public);
 		cache.refresh();
 	} catch(const std::runtime_error& err) {
 		msg<FATAL>(err.what());
@@ -1499,6 +1514,9 @@ static void load_index_config()
 	apply("index_root", index_root);
 	apply("user", switch_user);
 	apply("group", switch_group);
+	auto ip = vars.find("index_public");
+	if (ip != vars.end() && !ip->second.empty())
+		index_public = ip->second != "0" && ip->second != "no" && ip->second != "off";
 	if (exmdbHost.empty())
 		apply("exmdb_host", exmdbHost);
 	if (exmdbPort.empty())
@@ -1509,7 +1527,32 @@ static void load_index_config()
 		exmdbPort = "5000";
 }
 
-static std::vector<user_row> am_read_users(kvpairs &&vars)
+/**
+ * @brief      Run a query and append its rows to the store list
+ *
+ * Expects the columns (name, dir, hostname) in that order.
+ */
+static void am_collect(MYSQL *conn, const char *query, bool isPublic,
+    std::vector<store_row> &slist)
+{
+	if (mysql_query(conn, query) != 0) {
+		fprintf(stderr, "%s: %s\n", query, mysql_error(conn));
+		throw EXIT_FAILURE;
+	}
+	DB_RESULT myres = mysql_store_result(conn);
+	if (myres == nullptr) {
+		fprintf(stderr, "result: %s\n", mysql_error(conn));
+		throw EXIT_FAILURE;
+	}
+	for (DB_ROW row; (row = myres.fetch_row()) != nullptr; ) {
+		if (row[0] == nullptr || row[1] == nullptr)
+			continue;
+		auto host = row[2] != nullptr && row[2][0] != '\0' ? row[2] : "::1";
+		slist.emplace_back(store_row{row[0], row[1], host, isPublic});
+	}
+}
+
+static std::vector<store_row> am_read_stores(kvpairs &&vars)
 {
 	std::unique_ptr<MYSQL, our_del> conn(mysql_init(nullptr));
 	if (conn == nullptr)
@@ -1527,27 +1570,22 @@ static std::vector<user_row> am_read_users(kvpairs &&vars)
 		throw EXIT_FAILURE;
 	}
 
-	static constexpr char query[] =
+	std::vector<store_row> slist;
+	am_collect(conn.get(),
 		"SELECT u.username, u.maildir, s.hostname FROM users u "
 		"LEFT JOIN servers s ON u.homeserver=s.id "
-		"WHERE u.maildir != ''";
-	if (mysql_query(conn.get(), query) != 0) {
-		fprintf(stderr, "%s: %s\n", query, mysql_error(conn.get()));
-		throw EXIT_FAILURE;
-	}
-	DB_RESULT myres = mysql_store_result(conn.get());
-	if (myres == nullptr) {
-		fprintf(stderr, "result: %s\n", mysql_error(conn.get()));
-		throw EXIT_FAILURE;
-	}
-	std::vector<user_row> ulist;
-	for (DB_ROW row; (row = myres.fetch_row()) != nullptr; ) {
-		if (row[0] == nullptr || row[1] == nullptr)
-			continue;
-		auto host = row[2] != nullptr && row[2][0] != '\0' ? row[2] : "::1";
-		ulist.emplace_back(user_row{row[0], row[1], host});
-	}
-	return ulist;
+		"WHERE u.maildir != ''", false, slist);
+	/*
+	 * Public stores live in the domain's homedir rather than a maildir.
+	 * Suspended and deleted domains are skipped: their store is either not
+	 * supposed to be reachable or already gone from disk.
+	 */
+	if (index_public)
+		am_collect(conn.get(),
+			"SELECT d.domainname, d.homedir, s.hostname FROM domains d "
+			"LEFT JOIN servers s ON d.homeserver=s.id "
+			"WHERE d.homedir != '' AND d.domain_status=0", true, slist);
+	return slist;
 }
 
 int main(int argc, char **argv) try
@@ -1576,9 +1614,14 @@ int main(int argc, char **argv) try
 		execv(argv[0], argv);
 	}
 	int bigret = EXIT_SUCCESS;
-	fprintf(stderr, "Running grommunio-index for all user databases\n");
-	for (auto &&u : am_read_users(std::move(cfg))) {
-		auto index_home = index_root + "/" + u.username;
+	fprintf(stderr, "Running grommunio-index for all mailbox and public store databases\n");
+	for (auto &&u : am_read_stores(std::move(cfg))) {
+		/*
+		 * Usernames always carry an "@", domain names never do, so the
+		 * two namespaces cannot collide within index_root.
+		 */
+		auto index_home = index_root + "/" + u.name;
+		const char *kind = u.isPublic ? "public store" : "user";
 		if (mkdir(index_home.c_str(), 0777) != 0 && errno != EEXIST) {
 			fprintf(stderr, "mkdir %s: %s\n", index_home.c_str(), strerror(errno));
 			bigret = EXIT_FAILURE;
@@ -1586,15 +1629,17 @@ int main(int argc, char **argv) try
 		}
 		auto index_file = index_home + "/index.sqlite3";
 		if (verbosity >= INFO)
-			fprintf(stderr, "Indexing user \"%s\": %s -e %s -o %s\n",
-				u.username.c_str(), argv[0], u.host.c_str(), index_file.c_str());
+			fprintf(stderr, "Indexing %s \"%s\": %s%s -e %s -o %s\n",
+				kind, u.name.c_str(), argv[0], u.isPublic ? " -P" : "",
+				u.host.c_str(), index_file.c_str());
 		userpath.emplace(std::move(u.dir));
 		exmdbHost = std::move(u.host);
 		outpath = std::move(index_file);
+		is_public = u.isPublic;
 		auto ret = single_mode();
 		if (ret != 0) {
-			fprintf(stderr, "Indexing user \"%s\" exited with status %d\n",
-				u.username.c_str(), ret);
+			fprintf(stderr, "Indexing %s \"%s\" exited with status %d\n",
+				kind, u.name.c_str(), ret);
 			bigret = EXIT_FAILURE;
 		}
 	}

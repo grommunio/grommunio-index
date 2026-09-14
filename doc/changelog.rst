@@ -1,3 +1,9 @@
+v1.7 (2026-09-14)
+=================
+* Index public stores
+  (new -P option, covered automatically by -A, disable with index_public=no)
+
+
 v1.6 (2026-06-22)
 =================
 * Fix "database is locked" errors when updating large mailboxes
