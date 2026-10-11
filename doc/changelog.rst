@@ -2,6 +2,7 @@ v1.7 (2026-09-14)
 =================
 * Index public stores
   (new -P option, covered automatically by -A, disable with index_public=no)
+* Index the names of all attachments, not just the first
 
 
 v1.6 (2026-06-22)
