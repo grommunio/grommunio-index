@@ -1062,7 +1062,7 @@ private:
 		stmt_ins.call(sqlite3_clear_bindings);
 		uint32_t instance = client.send<LoadMessageInstanceRequest>(usrpath, "", 65001, false, 0, util::makeEidEx(1, message.mid)).instanceId;
 		auto rcpts = client.send<GetMessageInstanceRecipientsRequest>(usrpath, instance, 0, std::numeric_limits<uint16_t>::max());
-		auto attchs = client.send<QueryMessageInstanceAttachmentsTableRequest>(usrpath, instance, attchProps, 0, 0);
+		auto attchs = client.send<QueryMessageInstanceAttachmentsTableRequest>(usrpath, instance, attchProps, 0, std::numeric_limits<uint16_t>::max());
 		auto propvals = client.send<GetInstancePropertiesRequest>(usrpath, 0, instance, msgtags).propvals;
 		client.send<UnloadInstanceRequest>(usrpath, instance);
 		msg<TRACE>(" Received ", propvals.size(), "/", msgtags.size(), " properties");
@@ -1074,7 +1074,11 @@ private:
 		for(const ExmdbQueries::PropvalList& pl : attchs.entries)
 			if((pl.size() == 1 && pl[0].tag == PropTag::ATTACHLONGFILENAME) ||
 			   (pl.size() == 2 && pl[1].value.u16 != 4 && pl[0].tag == PropTag::ATTACHLONGFILENAME))
+			{
+				if(!reuse.attchs.empty())
+					reuse.attchs += "\n";
 				reuse.attchs += pl[0].value.str;
+			}
 
 		mkMapMv(propvals.begin(), propvals.end(), reuse.props, tagMapper);
 		decltype(reuse.props)::iterator it;
